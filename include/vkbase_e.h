@@ -1,0 +1,10 @@
+#ifndef VKBASE_E_H
+#define VKBASE_E_H
+
+#include "../src/EngineBase.h"
+#include "../src/Buffer.h"
+#include "../src/Image.h"
+#include "../src/MyVkAdditional.h"
+#include "../src/ISysRes.h"
+
+#endif //VKBASE_E_H
