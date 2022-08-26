@@ -17,4 +17,10 @@ public:
 
     //create VkSurfaceKHR for output
     virtual VkSurfaceKHR createSurface(VkInstance instance) = 0;
+
+    virtual void info(const std::string& message)=0;
+
+    virtual void error(const std::string& message)=0;
+
+    virtual void warning(const std::string& message)=0;
 };

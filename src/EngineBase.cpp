@@ -11,11 +11,12 @@ namespace vkbase
 
     void EngineBase::init(ISysRes& sysRes, int width, int height)
     {
+        this->sysRes=&sysRes;
         WIDTH = width;
         HEIGHT = height;
         createInstance();
         setupDebugMessenger();
-        surface=sysRes.createSurface(instance);
+        surface=this->sysRes->createSurface(instance);
         pickPhysicalDevice();
         queueFamilyIndices = findQueueFamilies(physicalDevice, surface);
         createLogicalDevice();
@@ -29,10 +30,9 @@ namespace vkbase
 #endif
         createRenderPass();
         createFrameBuffers();//uses render pass
-        //команды рендеринга
-        createCbRender();
-        //cоздать семафоры и заборы
         createSyncObjects();
+
+        setupLogic();
     }
 
 
@@ -68,7 +68,7 @@ namespace vkbase
 
         //информация о расширениях для оконной системы
         //получает массив
-        auto extensionsGLWF = sysRes.getRequiredInstanceExtensions();
+        auto extensionsGLWF = sysRes->getRequiredInstanceExtensions();
         //и если слои преверки включены то добавляет еще одно расширение для отладки
         //(помимо тех что нужны для роботы glwf)
         //утилы отладки
@@ -324,8 +324,7 @@ namespace vkbase
         createSwapChain();
         //обернуть изображения цепи
         createImageViews();
-        //вызывается для смены расширения в шейдерах
-        //changeExtent();
+
 
 #if DEPTH_BUFFER
         //создать необходимые обьекты для работы буффера глубины
@@ -649,144 +648,7 @@ namespace vkbase
 
 #endif
 
-    //GRAPHICS_PIPELINE
-    //как будет проходить рендер
 
-    inline void EngineBase::createRenderPass()
-    {
-        //цветовые прекрипления
-        VkAttachmentDescription colorAttachment{};
-        //формат цвета должен соответствовать формату цепи
-        colorAttachment.format = swapChainImageFormat;
-        //семплы (точность сглаживания)
-        colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-
-        //применимо к цвету и глубене
-        //что делать с кадровым буфером до рендера
-        /*
-        VK_ATTACHMENT_LOAD_OP_LOAD: Сохранить существующее содержимое вложения
-        VK_ATTACHMENT_LOAD_OP_CLEAR: Очистить значения до константы в начале
-        VK_ATTACHMENT_LOAD_OP_DONT_CARE: Существующее содержимое не определено; мы не заботимся о них*/
-        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        //что делать с кадровым буфером после рендера
-        /*VK_ATTACHMENT_STORE_OP_STORE: Визуализированное содержимое будет сохранено в памяти и может быть прочитано позже
-        VK_ATTACHMENT_STORE_OP_DONT_CARE: Содержимое кадрового буфера будет неопределенным после операции рендеринга*/
-        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-
-        //применимо к данным трафарета
-        //befor
-        colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        //after
-        colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-
-        //определяет, макет изображение будет иметь перед началом прохода рендеринга.
-        colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;//не интересует как придет
-        //формат изображения после прохода рендера (на выходе)
-        colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-        /*VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL: Изображения, используемые в качестве цветного вложения
-        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR: Изображения, которые будут представлены в цепочке обмена
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL: Изображения, которые будут использоваться в качестве места назначения для операции копирования в память*/
-
-
-
-        //подпроходы---
-        //вложение для подпрохода
-        //каждый подпроход ссылается на один или больше VkAttachmentReference
-        VkAttachmentReference colorAttachmentRef{};
-        //индекс в массиве вложений( VkAttachmentDescription)
-        colorAttachmentRef.attachment = 0;
-        //
-        colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-
-
-        //прекрипление глубины
-        VkAttachmentDescription depthAttachment{};
-        depthAttachment.format = VK_FORMAT_D32_SFLOAT;
-
-        depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-        VkAttachmentReference depthAttachmentRef{};
-        depthAttachmentRef.attachment = 1;
-        depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-
-
-
-        //подпроход
-        VkSubpassDescription subpass{};
-        //указывает что это графический процес
-        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-        //количество  VkAttachmentReference
-        subpass.colorAttachmentCount = 1;
-        //массив цветовых вложений  VkAttachmentReference(индекс каждого вложения в этом массиве связан с макросом цвета в фрагментном шейдере)
-        subpass.pColorAttachments = &colorAttachmentRef;
-        /*pInputAttachments: Вложения, которые читаются из шейдера
-        pResolveAttachments: Вложения, используемые для мультисэмплинга
-        pDepthStencilAttachment: Приложение для данных о глубине и трафарете
-        pPreserveAttachments: Вложения, которые не используются этим подпроходом, но для которых необходимо сохранить данные*/
-#if DEPTH_BUFFER
-        subpass.pDepthStencilAttachment = &depthAttachmentRef;
-#endif
-        //зависимости подпроходов
-        VkSubpassDependency dependency{};
-
-        //ОТ КАКОЙ СТАДИИ ЗАВИСИТ
-        //индекс
-        //*(VK_SUBPASS_EXTERNAL является неявным подпроходом до или после рендеринга(в зависимости от того где оно указано(srcSubpass или dstSubpass )))*/
-        dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-        //операция
-        dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;//(цветовое вложение)
-        //етап операции
-        dependency.srcAccessMask = 0;/*начало*/
-
-        //ЧТО ЗАВИСИТ
-        //индекс(0-индекс единственного подпрохлда который сейчас имеется)
-        dependency.dstSubpass = 0;
-        //операция
-        dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        //этап операции (доступ к записи цвета)
-        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-        //инфа о проходе рендеринга+-
-        VkRenderPassCreateInfo renderPassInfo{};
-        //тип
-        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-
-        //массив цветовых прекриплений++
-        std::vector<VkAttachmentDescription> attachments = {colorAttachment};
-
-#if DEPTH_BUFFER
-        attachments.push_back(depthAttachment);
-#endif
-        renderPassInfo.pAttachments = attachments.data();
-        //количество цветовых прекриплений++
-        renderPassInfo.attachmentCount = attachments.size();
-
-        //количество подпроходов
-        renderPassInfo.subpassCount = 1;
-        //массив подпроходов
-        renderPassInfo.pSubpasses = &subpass;
-        //количество зависимостей подпроходов
-        renderPassInfo.dependencyCount = 1;
-        //массив зависимостей подпроходов
-        renderPassInfo.pDependencies = &dependency;
-
-        //создать проход рендеринга
-        if (vkCreateRenderPass(logicalDevice/*логичское устройство*/, &renderPassInfo/*инфа*/, nullptr,
-                               &renderPass/*дескриптор*/) != VK_SUCCESS)
-        {
-            throw std::runtime_error("failed to create render pass!");
-        }
-
-
-    }
 
 
 
@@ -870,37 +732,6 @@ namespace vkbase
     }
 
 
-    //создание буферов команд
-    inline void EngineBase::createCbRender()
-    {
-        //установка размера равного размеру кадрового буфера
-        cbRender.resize(MAX_FRAMES_IN_FLIGHT);
-
-
-        //заполнение структуры командных буфферов
-        VkCommandBufferAllocateInfo allocInfo{};
-        //тип структуры
-        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        //командный пул из которого будут выделены командные буфера
-        allocInfo.commandPool = commandPoolRest;
-        //первичный или вторичный буффер
-        /*VK_COMMAND_BUFFER_LEVEL_PRIMARY: Может быть передано в очередь для выполнения, но не может быть вызвано из других буферов команд.
-        VK_COMMAND_BUFFER_LEVEL_SECONDARY: Не может быть отправлено напрямую, но может быть вызвано из основных буферов команд.*/
-        //(получается что можно вызывать из одного буффера другой(необходимо проверить как!!))
-        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        //необходимое количество буферов для создания
-        allocInfo.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
-
-
-        //процес создания буффера(или массива)
-        if (vkAllocateCommandBuffers(logicalDevice/*лог устройство*/, &allocInfo/*заполненая выше структура*/,
-                                     cbRender.data()/*массив дескрипторов созданых буферов*/) != VK_SUCCESS)
-        {
-            throw std::runtime_error("failed to allocate command buffers!");
-        }
-    }
-
-
     //создание семофоров
 
     inline void EngineBase::createSyncObjects()
@@ -909,7 +740,8 @@ namespace vkbase
         imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
         renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
 
-        cbRenderFinished.resize(MAX_FRAMES_IN_FLIGHT);
+        fenceRenderFinished.resize(MAX_FRAMES_IN_FLIGHT);
+        fenceImageAvailable.resize(MAX_FRAMES_IN_FLIGHT);
 
         //для создания семофоров необходима структура, но она пока не имеет обязательных параметров
         VkSemaphoreCreateInfo semaphoreInfo{};
@@ -926,26 +758,37 @@ namespace vkbase
             //создание двух массивов семафоров для кождого кадра в полете
             if (vkCreateSemaphore(logicalDevice, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS ||
                 vkCreateSemaphore(logicalDevice, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]) != VK_SUCCESS ||
-                vkCreateFence(logicalDevice, &fenceInfo, nullptr, &cbRenderFinished[i]) != VK_SUCCESS)
+                vkCreateFence(logicalDevice, &fenceInfo, nullptr, &fenceRenderFinished[i]) != VK_SUCCESS||
+                vkCreateFence(logicalDevice, &fenceInfo, nullptr, &fenceImageAvailable[i]) != VK_SUCCESS)
             {
                 throw std::runtime_error("failed to create semaphores!");
             }
         }
-        //сeмофоры должны быть уничтожены
     }
 
 
     //метод отрисовки окна
     void EngineBase::drawFrame()
     {
-        static uint32_t imageIndex;
         static VkResult result;
+        //current swap chain image index
+        static uint32_t imageIndex;
 
+
+
+        //wait for fence
+        //if fence with index currentFrame is signaled
+        vkWaitForFences(logicalDevice, 1/*count*/, &fenceImageAvailable[currentFrame], VK_TRUE/*ждать все в массиве*/,
+                        UINT64_MAX);
+
+
+        //вернуть забор в первоначальное состояние(не активен, а значит не проходит сквозь vkWaitForFences пока не активируется )
+        vkResetFences(logicalDevice, 1, &fenceImageAvailable[imageIndex]);
 
         result = vkAcquireNextImageKHR(logicalDevice, swapChain,
-                                       UINT64_MAX/*время ожидания в наносекундах что бы изображение стало доступным(UINT64_MAX-без кд)*/,
-                                       imageAvailableSemaphores[currentFrame]/*семафор*/, VK_NULL_HANDLE/*забор*/,
-                                       &imageIndex/*указатель на индекс для записи в него out*/);
+                                       UINT64_MAX,
+                                       imageAvailableSemaphores[currentFrame],fenceImageAvailable[currentFrame],
+                                       &imageIndex);
 
 
 
@@ -965,10 +808,10 @@ namespace vkbase
 
 
         //ждать актривации забора(возможно ждать сразу несолько передавая указ на массив)
-        vkWaitForFences(logicalDevice, 1/*count*/, &cbRenderFinished[imageIndex], VK_TRUE/*ждать все в массиве*/,
+        vkWaitForFences(logicalDevice, 1/*count*/, &fenceRenderFinished[imageIndex], VK_TRUE/*ждать все в массиве*/,
                         UINT64_MAX);
         //вернуть забор в первоначальное состояние(не активен, а значит не проходит сквозь vkWaitForFences пока не активируется )
-        vkResetFences(logicalDevice, 1, &cbRenderFinished[imageIndex]);
+        vkResetFences(logicalDevice, 1, &fenceRenderFinished[imageIndex]);
 
         //
         drawPrepare();
@@ -985,6 +828,7 @@ namespace vkbase
         //wait for image available semaphore
         VkSemaphore waitSemaphores[]{imageAvailableSemaphores[currentFrame]};
         submitInfo.pWaitSemaphores = waitSemaphores;
+
         //command buffer to submit
         submitInfo.pCommandBuffers = &cbRender[imageIndex];
 
@@ -992,9 +836,9 @@ namespace vkbase
         //(цвет не начнет записыватся пока изображение не получено и фрагментный шейдер выполнятся пока не обработаны вершины)
         VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
                                              VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT};
+
         //передача массива ожидающих стадий
         submitInfo.pWaitDstStageMask = waitStages;
-
 
         //количество семафоров которые активируются после выполнения рендеринга
         submitInfo.signalSemaphoreCount = 1;
@@ -1004,7 +848,7 @@ namespace vkbase
 
         //отправка буффера команд(с настройками семафоров) в графическую очередь
         if (vkQueueSubmit(graphicsQueue/*очередь*/, 1/*к-во структур с буферами*/,
-                          &submitInfo/*ptr on array of struct*/, cbRenderFinished[imageIndex]/*забор*/) != VK_SUCCESS)
+                          &submitInfo/*ptr on array of struct*/, fenceRenderFinished[imageIndex]/*забор*/) != VK_SUCCESS)
         {
             throw std::runtime_error("failed to submit draw command buffer!");
         }
@@ -1078,7 +922,8 @@ namespace vkbase
             vkDestroySemaphore(logicalDevice, renderFinishedSemaphores[i], nullptr);
             vkDestroySemaphore(logicalDevice, imageAvailableSemaphores[i], nullptr);
             //забор
-            vkDestroyFence(logicalDevice, cbRenderFinished[i], nullptr);
+            vkDestroyFence(logicalDevice, fenceRenderFinished[i], nullptr);
+            vkDestroyFence(logicalDevice, fenceImageAvailable[i], nullptr);
         }
 
         //удаление коммандного пула
@@ -1109,29 +954,35 @@ namespace vkbase
             const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData
     )
     {
-        std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
+
+        auto thiz = reinterpret_cast<EngineBase *>(pUserData);
+
+        switch (messageSeverity)
+        {
+            case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
+                thiz->sysRes->error(pCallbackData->pMessage);
+                break;
+            case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
+                thiz->sysRes->warning(pCallbackData->pMessage);
+                break;
+            case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
+                thiz->sysRes->info(pCallbackData->pMessage);
+                break;
+            case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
+                thiz->sysRes->info(pCallbackData->pMessage);
+                break;
+            default:
+                break;
+        }
 
         return VK_FALSE;
     }
 
     //инициализация структуры месседжера отладки при создании instance
 
-    inline void EngineBase::populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT &createInfo)
-    {
-        createInfo = {};
-        createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-        createInfo.messageSeverity =
-                VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-        createInfo.messageType =
-                VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-                VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-        //указатель на функцию для вывода отладочного сообщения
-        createInfo.pfnUserCallback = debugCallback;
-    }
+
 
     //создает мессенжер отладки
-
     inline void EngineBase::setupDebugMessenger()
     {
         //если слои проверки отключены вернутся
@@ -1139,8 +990,10 @@ namespace vkbase
             return;
         //инфа для создание месседжера
         VkDebugUtilsMessengerCreateInfoEXT createInfo;
-        //заполниить структуру
+        createInfo = {};
         populateDebugMessengerCreateInfo(createInfo);
+
+
         //создать месседтжер
         if (CreateDebugUtilsMessengerEXT(instance/*экзэмпляр Vk*/, &createInfo/*stuct info*/, nullptr,
                                          &debugMessenger/*дескриптор на выходе*/) != VK_SUCCESS)
@@ -1149,6 +1002,69 @@ namespace vkbase
         }
     }
 
+    void EngineBase::DestroyDebugUtilsMessengerEXT(
+            VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks *pAllocator
+    )
+    {
+        auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
+        if (func != nullptr) {
+            func(instance, debugMessenger, pAllocator);
+        }
+
+    }
+
+    VkResult EngineBase::CreateDebugUtilsMessengerEXT(
+            VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo,
+            const VkAllocationCallbacks *pAllocator, VkDebugUtilsMessengerEXT *pDebugMessenger
+    )
+    {
+        auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
+        if (func != nullptr) {
+            return func(instance, pCreateInfo, pAllocator, pDebugMessenger);
+        }
+        else {
+            return VK_ERROR_EXTENSION_NOT_PRESENT;
+        }
+    }
+
+    bool EngineBase::checkValidationLayerSupport()
+    {
+        uint32_t layerCount;
+        //запрос на получение длины списка
+        vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+        //теперь создание массива доступных
+        VkLayerProperties* availableLayers=new VkLayerProperties[layerCount];
+        //повторный запрос уже с возвратом по ссылке через параметр
+        //массив хранит доступные слои проверки
+        vkEnumerateInstanceLayerProperties(&layerCount, availableLayers);
+        //поиск необходимых слоев в SDK
+        for (const char* chekingLayers : validationLayers)
+        {
+            bool checking=false;
+            for (uint32_t i=0;i<layerCount;++i)
+            {
+                std::cout<<availableLayers[i].layerName<<std::endl;
+                if (strcmp(chekingLayers, availableLayers[i].layerName) == 0)
+                {
+                    checking = true;
+                    break;
+                }
+            }
+            if (!checking)
+                return false;
+        }
+        return true;
+    }
+
+    void EngineBase::populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT &createInfo)
+    {
+        createInfo = {};
+        createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+        createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+        createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+        createInfo.pfnUserCallback = debugCallback;
+        createInfo.pUserData=this;
+    }
 
 
 }

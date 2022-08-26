@@ -5,6 +5,6 @@
 #include "../src/Buffer.h"
 #include "../src/Image.h"
 #include "../src/MyVkAdditional.h"
-#include "../src/ISysRes.h"
+#include "vkbase/include/VKBASE/ISysRes.h"
 
 #endif //VKBASE_E_H

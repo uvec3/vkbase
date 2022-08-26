@@ -15,18 +15,24 @@
 #include <chrono>
 #define _USE_MATH_DEFINES
 #include <math.h>
-#include "VulkanValidationLayer.h"//my class for check validation layer
 #include "MyVkAdditional.h"
 #include "Image.h"
-#include "ISysRes.h"
+#include "vkbase/include/VKBASE/ISysRes.h"
+
+
+
 
 
 namespace vkbase
 {
     class EngineBase
     {
+
     public:
+        friend class Image;
+        friend class Buffer;
 //TYPES
+    private:
         //struct for storing info about swapchain
         struct SwapChainSupportDetails
         {
@@ -40,20 +46,33 @@ namespace vkbase
         };
 
 //CONSTANTS
+    protected:
+        //the desired number of frames to be processed simultaneously (corrected when creating a swapchain with restrictions)
+        const int MAX_FRAMES_IN_FLIGHT = 1;
+
         //required extensions for device
         const std::vector<const char *> deviceExtensions{
             VK_KHR_SWAPCHAIN_EXTENSION_NAME
         };
 
-        //window size
-        int WIDTH = 1000;
-        int HEIGHT = 500;
-
-        //the desired number of frames to be processed simultaneously (corrected when creating a swapchain with restrictions)
-        const int MAX_FRAMES_IN_FLIGHT = 1;
+        //ValidationLayers
+        static constexpr std::array<const char*, 1> validationLayers = {
+        "VK_LAYER_KHRONOS_validation"
+        };
+#ifdef NDEBUG//Release
+	    constexpr bool enableValidationLayers = false;
+#else//DEBUG
+        static constexpr bool enableValidationLayers = true;
+#endif
 
 
 //VARS
+    protected:
+        //representation of system (contains platform-dependent methods for loading files, creating surface, etc.)
+        ISysRes* sysRes;
+        //window size
+        int WIDTH = 1000;
+        int HEIGHT = 500;
         //VK instance
         VkInstance instance{nullptr};
         //debug messenger
@@ -106,9 +125,9 @@ namespace vkbase
         std::vector<VkSemaphore> renderFinishedSemaphores;
 
     //FENCES (sync CPU & GPU)
-        std::vector<VkFence> cbRenderFinished;
-
-
+        //image available fence
+        std::vector<VkFence> fenceImageAvailable;
+        std::vector<VkFence> fenceRenderFinished;
 
         uint32_t currentFrame{0};
 
@@ -116,22 +135,25 @@ namespace vkbase
         //Graphic pipelines
         //std::vector<DrawProgram> drawingMods;
 
-        //representation of system (contains platform-dependent methods for loading files, creating surface, etc.)
-        ISysRes& sysRes;
 
 //METHODS
     public:
-        //initialization of the engine
+        virtual //initialization of the engine
         void init(ISysRes& sysRes, int width, int height);
         //check swapchain, process all changes, update all data, rendering and presentation
         void drawFrame();
         //change extent of swapchain
+        //engine should always be informed about window resizing
         void setExtent(int width, int height);
+        //clear all resources and destroy all Vulkan objects
+        void cleanup();
     protected:
         //place where inheritance classes can initialize renderer logic (create command buffers, pipelines, etc.)
         virtual void setupLogic() = 0;
-        //called before sumbit command buffer
+        //called before submit command buffer
         virtual void drawPrepare() = 0;
+        //describe the render pass
+        virtual void createRenderPass() =0;
     private:
     //SETUP VULKAN DEVICES
         //create instance
@@ -174,8 +196,6 @@ namespace vkbase
 
 
     //RENDER PASS
-        //describe the render pass
-        void createRenderPass();
 
         //create command pool
         void createCommandPool();
@@ -183,10 +203,6 @@ namespace vkbase
         //create command pool with support for buffer overwriting without the need to flush the pool
         void createCommandPoolRest();
 
-        //create command buffers for rendering for each frame in the swapchain
-        void createCbRender();
-
-        //create sync objects (semaphores and fences)
         void createSyncObjects();
 
 
@@ -196,12 +212,22 @@ namespace vkbase
                 VkDebugUtilsMessageTypeFlagsEXT messageType,
                 const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData);
 
-        void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT &createInfo);
 
         void setupDebugMessenger();
 
-    //DESTROY
-        //clear all resources and destroy all Vulkan objects
-        void cleanup();
+        void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
+
+        static bool checkValidationLayerSupport();
+
+        static VkResult CreateDebugUtilsMessengerEXT(VkInstance instance,
+                                              const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
+                                              const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger);
+
+        static void DestroyDebugUtilsMessengerEXT(VkInstance instance,
+                                           VkDebugUtilsMessengerEXT debugMessenger,
+                                           const VkAllocationCallbacks* pAllocator);
+
+
+
     };
 }

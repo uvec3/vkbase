@@ -9,9 +9,9 @@ project(vkbase_proj)
 ######################################
 
 if(${ANDROID})
-	list(APPEND PLATFORM_DEPEND_SOURCES platform-dependent/AndroidSysRes.cpp)
+	list(APPEND PLATFORM_DEPEND_SOURCES ../include/VKBASE/platform-dependent/AndroidSysRes.cpp)
 else()
-	list(APPEND PLATFORM_DEPEND_SOURCES platform-dependent/SysResDesktop.cpp)
+	#list(APPEND PLATFORM_DEPEND_SOURCES ../include/VKBASE/platform-dependent/SysResGLFW.cpp)
 endif()
 
 
@@ -40,6 +40,7 @@ add_library(vkbase_e Buffer.cpp EngineBase.cpp Image.cpp MyVkAdditional.cpp
 target_include_directories(
 		vkbase_e
 		PUBLIC ${Vulkan_INCLUDE_DIRS}
+
 )
 
 
