@@ -1,13 +1,13 @@
 #pragma once
-
 #include<vulkan/vulkan.hpp>//VK
 #include <stdexcept>//for runtime_error
 #include "EngineBase.h"
 
-class EngineBase;
+
 
 namespace vkbase
 {
+    class EngineBase;
 
     class Image
     {

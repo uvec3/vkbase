@@ -40,6 +40,8 @@ add_library(vkbase_e Buffer.cpp EngineBase.cpp Image.cpp MyVkAdditional.cpp
 target_include_directories(
 		vkbase_e
 		PUBLIC ${Vulkan_INCLUDE_DIRS}
+		PUBLIC ${Vulkan_INCLUDE_DIRS}/../Third-Party/Include
+
 
 )
 
