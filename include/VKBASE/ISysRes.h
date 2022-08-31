@@ -5,11 +5,11 @@
 //system-dependent methods interface
 //necessary for creating engine
 //you can use one of existed classes which implement this interface
-//or define your own if here is no class for your platform
-class ISysRes
+//or define your own
+    class ISysRes
 {
 public:
-    //load files for Engine
+    //load files for Engine (return empty vector if file not found)
     virtual std::vector<char> load_file(const char *path) = 0;
 
     //list of instance extensions which are necessary for platform

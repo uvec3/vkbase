@@ -1,10 +1,10 @@
 #include "Image.h"
-
+#include <stdexcept>//for runtime_error
 
 namespace vkbase
 {
 
-    Image::Image(
+    void Image::create(
             EngineBase *eng, uint32_t width, uint32_t height, VkFormat format, VkMemoryPropertyFlags memProperty,
             VkImageUsageFlags usage, VkImageAspectFlags aspectFlags, VkMemoryHeapFlags heapFlags,
             VkImageLayout imageLayout, bool tillingLinear
@@ -65,8 +65,7 @@ namespace vkbase
         VkMemoryAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         allocInfo.allocationSize = memRequirements.size;
-        allocInfo.memoryTypeIndex = findMemoryType(eng->physicalDevice, memRequirements.memoryTypeBits, memProperty,
-                                                   heapFlags);
+        allocInfo.memoryTypeIndex = eng->findMemoryType( memRequirements.memoryTypeBits, memProperty, heapFlags);
 
         if (vkAllocateMemory(eng->logicalDevice, &allocInfo, nullptr, &memory) != VK_SUCCESS)
         {
@@ -97,7 +96,7 @@ namespace vkbase
         }
     }
 
-    Image::~Image()
+    void Image::destroy()
     {
         vkDestroyImageView(eng->logicalDevice, imageView, nullptr);
         vkDestroyImage(eng->logicalDevice, image, nullptr);

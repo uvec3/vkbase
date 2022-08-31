@@ -1,38 +1,41 @@
 #pragma once
-
+#include <optional>
 #include <vulkan/vulkan.hpp>
-#include <iostream>
-#include <stdexcept>//for runtime_error
-#include <functional>//for lambda
-#include <cstdlib>//for macros EXIT
-#include <vector>
-#include <array>
-#include <optional>//wraps object
-#include <set>
-#include <algorithm>//for min & max
-#include <fstream>
-#include <thread>
-#include <chrono>
-#define _USE_MATH_DEFINES
-#include <math.h>
-#include "MyVkAdditional.h"
 #include "Image.h"
 #include "vkbase/include/VKBASE/ISysRes.h"
-
-
-
-
+#if VKBASE_SHADER_RUNTIME_COMPILE
+    #include <shaderc/shaderc.hpp>
+#endif
 
 namespace vkbase
 {
     class EngineBase
     {
 
+//FRIENDS
     public:
         friend class Image;
         friend class Buffer;
 //TYPES
     private:
+
+        //struct stores queues indices on physical device
+        struct QueueFamilyIndices
+        {
+            //for graphics queue
+            std::optional<uint32_t> graphicsFamily;
+            //for presenting
+            std::optional<uint32_t> presentFamily;
+            //for compute pipelines
+            std::optional<uint32_t> computeFamily;
+
+            //check if all queue families are found
+            [[nodiscard]] bool isComplete() const
+            {
+                return graphicsFamily.has_value() && presentFamily.has_value();
+            }
+        };
+
         //struct for storing info about swapchain
         struct SwapChainSupportDetails
         {
@@ -48,7 +51,7 @@ namespace vkbase
 //CONSTANTS
     protected:
         //the desired number of frames to be processed simultaneously (corrected when creating a swapchain with restrictions)
-        const int MAX_FRAMES_IN_FLIGHT = 1;
+        const int MAX_FRAMES_IN_FLIGHT = 2;
 
         //required extensions for device
         const std::vector<const char *> deviceExtensions{
@@ -75,19 +78,18 @@ namespace vkbase
         int HEIGHT = 500;
         //VK instance
         VkInstance instance{nullptr};
-        //debug messenger
+        //debug messenger(response for debug layers)
         VkDebugUtilsMessengerEXT debugMessenger{VK_NULL_HANDLE};
         // Physical device handle
-        // physical device handle will be implicitly destroyed
-        //in vkDestroyInstance
+        // will be implicitly destroyed in vkDestroyInstance
         VkPhysicalDevice physicalDevice;
         //logical device
         VkDevice logicalDevice;
         //queue family indices
         QueueFamilyIndices queueFamilyIndices;
-        //graphics queue handle (no need to destroy)
+        //graphics queue handle (don't need to destroy)
         VkQueue graphicsQueue{VK_NULL_HANDLE};
-        //present queue handle for image output command to the surface (no need to destroy)
+        //present queue handle for image output command to the surface (don't need to destroy)
         VkQueue presentQueue{VK_NULL_HANDLE};
         //surface
         VkSurfaceKHR surface{VK_NULL_HANDLE};
@@ -100,10 +102,6 @@ namespace vkbase
         //array of image views for each image in the swapchain
         std::vector<VkImageView> swapChainImageViews;
 
-        #if DEPTH_BUFFER
-        //Depth buffer
-        std::vector<Image> depthImages;
-        #endif //DEPTH_BUFFER
 
         //output image format
         VkFormat swapChainImageFormat;
@@ -132,19 +130,17 @@ namespace vkbase
         uint32_t currentFrame{0};
 
         bool windowResized{false};
-        //Graphic pipelines
-        //std::vector<DrawProgram> drawingMods;
 
 
 //METHODS
     public:
-        virtual //initialization of the engine
-        void init(ISysRes& sysRes, int width, int height);
+        //initialization of the engine
+        virtual void init(ISysRes& sysRes, int width, int height);
         //check swapchain, process all changes, update all data, rendering and presentation
         void drawFrame();
         //change extent of swapchain
         //engine should always be informed about window resizing
-        void setExtent(int width, int height);
+        virtual void setExtent(int width, int height);
         //clear all resources and destroy all Vulkan objects
         void cleanup();
     protected:
@@ -154,8 +150,10 @@ namespace vkbase
         virtual void drawPrepare() = 0;
         //describe the render pass
         virtual void createRenderPass() =0;
-    private:
+
     //SETUP VULKAN DEVICES
+    private:
+
         //create instance
         void createInstance();
 
@@ -171,12 +169,22 @@ namespace vkbase
         //create logical device
         void createLogicalDevice();
 
+        //find necessary queue families for selected device
+        inline QueueFamilyIndices findQueueFamilies(VkPhysicalDevice physicalDevice);
+
+
+        uint32_t findMemoryType( uint32_t typeFilter, VkMemoryPropertyFlags properties,
+                                 VkMemoryHeapFlags heapFlags);
+
     //SWAP CHAIN
+
+        void createSwapChain();
         void recreateSwapChain();
         void cleanupSwapChain();
-        void createSwapChain();
+
         //create image views for each image in the swapchain
         void createImageViews();
+
         //query swapchain support details
         SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
 
@@ -188,46 +196,67 @@ namespace vkbase
 
         //choose extent
         VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities);
+
         //create framebuffers for each image in the swapchain
         void createFrameBuffers();
-#if DEPTH_BUFFER//create depth buffer
-        void createDepthResources();
-#endif
 
 
-    //RENDER PASS
+    //COMMAND POOLs
 
         //create command pool
         void createCommandPool();
 
-        //create command pool with support for buffer overwriting without the need to flush the pool
+        //create command pool with support for buffer overwriting without the need to flush the entire pool
         void createCommandPoolRest();
+
+    //SYNC OBJECTS
 
         void createSyncObjects();
 
-
     //DEBUG
+
+        //extracts pointers on functions for create and destroy DebugUtilsMessengerEXT
+        static VkResult CreateDebugUtilsMessengerEXT(VkInstance instance,
+                                                     const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
+                                                     const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger);
+
+        static void DestroyDebugUtilsMessengerEXT(VkInstance instance,
+                                                  VkDebugUtilsMessengerEXT debugMessenger,
+                                                  const VkAllocationCallbacks* pAllocator);
+
+        //check if installed vulkan supported necessary validation layers
+        static bool checkValidationLayerSupport();
+
+        //calls for debug messages
         static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
                 VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
                 VkDebugUtilsMessageTypeFlagsEXT messageType,
                 const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData);
 
-
         void setupDebugMessenger();
 
-        void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
-
-        static bool checkValidationLayerSupport();
-
-        static VkResult CreateDebugUtilsMessengerEXT(VkInstance instance,
-                                              const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
-                                              const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger);
-
-        static void DestroyDebugUtilsMessengerEXT(VkInstance instance,
-                                           VkDebugUtilsMessengerEXT debugMessenger,
-                                           const VkAllocationCallbacks* pAllocator);
+        //this structure uses twice: instance creation && DebugMessenger
+        inline void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
 
 
+    //ADDITIONAL METHODS FOR INHERITANCE CLASSES
+    protected:
+
+        //create shader module from binary code
+        [[maybe_unused]] VkShaderModule createShaderModule(const std::vector<char> &code);
+
+        //read shader file using ISysRes interface
+        [[maybe_unused]] VkShaderModule loadPrecompiledShader(const std::string& filename);
+
+       #if VKBASE_SHADER_RUNTIME_COMPILE//use shaders compile library in engine
+        [[maybe_unused]] std::vector<char> compileShader(const std::vector<char>& source, const std::string &fileName);
+
+        //read source shader file using ISysRes interface and compile it
+        [[maybe_unused]] VkShaderModule loadSourceShader(const std::string &filename, bool save= false);
+
+        //try find compiled shader file, if not found - compile it from source
+        [[maybe_unused]] VkShaderModule loadShader(const std::string& filename);
+       #endif
 
     };
 }

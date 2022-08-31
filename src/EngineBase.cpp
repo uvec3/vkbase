@@ -1,4 +1,17 @@
+#include <iostream>
+#include <stdexcept>//for runtime_error
+#include <functional>//for lambda
+#include <cstdlib>//for macros EXIT
+#include <vector>
+#include <array>
+#include <optional>//wraps object
+#include <set>
+#if VKBASE_SHADER_RUNTIME_COMPILE
+    #include <shaderc/shaderc.hpp>
+#endif
+
 #include "EngineBase.h"
+
 
 namespace vkbase
 {
@@ -11,6 +24,10 @@ namespace vkbase
 
     void EngineBase::init(ISysRes& sysRes, int width, int height)
     {
+        #if VKBASE_SHADER_RUNTIME_COMPILE
+            std::cout << "Shader runtime compile enabled" << std::endl;
+        #endif
+
         this->sysRes=&sysRes;
         WIDTH = width;
         HEIGHT = height;
@@ -18,61 +35,44 @@ namespace vkbase
         setupDebugMessenger();
         surface=this->sysRes->createSurface(instance);
         pickPhysicalDevice();
-        queueFamilyIndices = findQueueFamilies(physicalDevice, surface);
+        queueFamilyIndices = findQueueFamilies(physicalDevice);
         createLogicalDevice();
         createCommandPool();
         createCommandPoolRest();
         createSwapChain();
         createImageViews();
-
-#if DEPTH_BUFFER//create depth buffer
-        createDepthResources();
-#endif
         createRenderPass();
         createFrameBuffers();//uses render pass
         createSyncObjects();
-
         setupLogic();
     }
 
 
     inline void EngineBase::createInstance()
     {
-        //СЛОИ ПРОВЕРКИ
-        //генерация исключения если они должны быть подключены но не найдены(не поддерживаются)
-        if (enableValidationLayers && !checkValidationLayerSupport())
-            throw std::runtime_error("validation layers requested, but not available!");
+        if constexpr (enableValidationLayers)
+            if(!checkValidationLayerSupport())
+                throw std::runtime_error("validation layers requested, but not available!");
 
-        //стуктура которая передаётся драйверу с информацией о проге
-        //но ее заполнение не обязательно
         VkApplicationInfo appInfo = {};
-        //тип структуры
-        appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-        //имя проги
-        appInfo.pApplicationName = "Hello Triangle";
-        //версия проги
-        appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-        //имя движка
-        appInfo.pEngineName = "No Engine";
-        //версия движка
-        appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-        //версия api vulkan
-        appInfo.apiVersion = VK_API_VERSION_1_0;
 
-        //вторая структура, владеет первой и передается при создании экзэмпляра
+        appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+
+        appInfo.pApplicationName = "Hello Triangle";
+        appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+        appInfo.pEngineName = "No Engine";
+        appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+        appInfo.apiVersion = VK_API_VERSION_1_3;
+
+
         VkInstanceCreateInfo createInfo = {};
-        //тип структуры
         createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-        //infa about proga (структура заполнена чуть выше)
         createInfo.pApplicationInfo = &appInfo;
 
-        //информация о расширениях для оконной системы
-        //получает массив
+
         auto extensionsGLWF = sysRes->getRequiredInstanceExtensions();
-        //и если слои преверки включены то добавляет еще одно расширение для отладки
-        //(помимо тех что нужны для роботы glwf)
-        //утилы отладки
-        if (enableValidationLayers)
+
+        if constexpr (enableValidationLayers)
             extensionsGLWF.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);//макрос=«VK_EXT_debug_utils»
 
         //предает кол-во расширений
@@ -80,7 +80,7 @@ namespace vkbase
         //и массив с ними
         createInfo.ppEnabledExtensionNames = extensionsGLWF.data();
 
-        // слои проверки
+
         //if in Releaze
         if (enableValidationLayers)
         {
@@ -115,7 +115,7 @@ namespace vkbase
         //запрашивает разширения но получает только их количество
         vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
         //создает масив для получения исключений
-        VkExtensionProperties *extensions = new VkExtensionProperties[extensionCount];
+        auto *extensions = new VkExtensionProperties[extensionCount];
         //опять запрашивает расширения и их количество и записывает в массив
         vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, extensions);
         //вывод
@@ -124,6 +124,7 @@ namespace vkbase
         {
             std::cout << "\t" << i << ")" << extensions[i].extensionName << std::endl;
         }
+        delete[] extensions;
         /*РАСШИРЕНИЯ*/
     }
 
@@ -131,7 +132,7 @@ namespace vkbase
     inline void EngineBase::pickPhysicalDevice()
     {
         //количество видеокарт
-        uint32_t deviceCount{0};
+        uint32_t deviceCount= 0;
         //запрос количества видеокарт (пока без данных)
         vkEnumeratePhysicalDevices(instance/*дескриптор vulkan*/, &deviceCount/*кол-во(_out)*/, nullptr/*массив*/);
         //если кол-во видеокарт поддерживающих vulkan =0 то
@@ -173,7 +174,7 @@ namespace vkbase
         vkGetPhysicalDeviceFeatures(physDevise, /*out*/&deviceFeatures);
 
         //запрос индексов семейств очередей
-        QueueFamilyIndices indices = findQueueFamilies(physDevise, surface);
+        QueueFamilyIndices indices = findQueueFamilies(physDevise);
 
         //проверка адэкватности цепей обмена
         bool swapChainAdequate = false;
@@ -188,7 +189,7 @@ namespace vkbase
         }
 
         //если все очереди найдены, необходимые расширения поддерживаются и цепи смогут работать то считать устройство пригодным
-        return indices.isComlete() && checkDeviceExtensionSupport(physDevise) && swapChainAdequate;
+        return indices.isComplete() && checkDeviceExtensionSupport(physDevise) && swapChainAdequate;
     }
 
     //проверка расширений физического устойства
@@ -223,7 +224,6 @@ namespace vkbase
 
 
     //создание логического устойсва
-
     inline void EngineBase::createLogicalDevice()
     {
         //задание множества из необходимых семейств очередей(повторов не будет)
@@ -250,7 +250,7 @@ namespace vkbase
         }
 
         //набор функций устройсва пока пусто!!
-        VkPhysicalDeviceFeatures deviceFeatures = {};
+        VkPhysicalDeviceFeatures deviceFeatures = {.shaderFloat64=true};
 
 
         //теперь двумя предидущими заполняем основную
@@ -307,9 +307,9 @@ namespace vkbase
     inline void EngineBase::recreateSwapChain()
     {
         //если окно свернуто или один из размеров(ширина или высота) равен нулю то создать
-        //кадровый буфер не получится, да и смысла нет по этому ждем пока размеры не станут коректными
+        //кадровый буфер не получится, да и смысла нет поэтому ждем пока размеры не станут коректными
         //также очевидно, что основной поток(рисования из которого вызывается recreateSwapChain )
-        //приостонавливатся пока размеры не будут корректны
+        //приостанавливатся пока размеры не будут корректны
         if (WIDTH == 0 || HEIGHT == 0)
             return;
         //дожидается завершения работы(заставляет CPU(текущий поток) ждать пока все изображения цепи не нарисуются)
@@ -333,7 +333,7 @@ namespace vkbase
         //создать кадровые буферы
         createFrameBuffers();
         //для отладки
-        std::cout << "Swap chain was recreate\n";
+        std::cout << "Swap chain was recreated\n";
     }
 
 
@@ -650,10 +650,6 @@ namespace vkbase
 
 
 
-
-
-
-
     //Создание кадровых буферов
 
     inline void EngineBase::createFrameBuffers()
@@ -700,9 +696,7 @@ namespace vkbase
 
     inline void EngineBase::createCommandPool()
     {
-        //струкура для создания коммандного пула
         VkCommandPoolCreateInfo poolInfo{};
-        //тип структуры командного пула
         poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
         //очередь в которую буфер будет отправлять комманды(в данном случае графическая)
         poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
@@ -776,18 +770,18 @@ namespace vkbase
 
 
 
-        //wait for fence
-        //if fence with index currentFrame is signaled
-        vkWaitForFences(logicalDevice, 1/*count*/, &fenceImageAvailable[currentFrame], VK_TRUE/*ждать все в массиве*/,
-                        UINT64_MAX);
-
-
-        //вернуть забор в первоначальное состояние(не активен, а значит не проходит сквозь vkWaitForFences пока не активируется )
-        vkResetFences(logicalDevice, 1, &fenceImageAvailable[imageIndex]);
+//        //wait for fence
+//        //if fence with index currentFrame is signaled
+//        vkWaitForFences(logicalDevice, 1/*count*/, &fenceImageAvailable[currentFrame], VK_TRUE/*ждать все в массиве*/,
+//                        UINT64_MAX);
+//
+//
+//        //вернуть забор в первоначальное состояние(не активен, а значит не проходит сквозь vkWaitForFences пока не активируется )
+//        vkResetFences(logicalDevice, 1, &fenceImageAvailable[imageIndex]);
 
         result = vkAcquireNextImageKHR(logicalDevice, swapChain,
                                        UINT64_MAX,
-                                       imageAvailableSemaphores[currentFrame],fenceImageAvailable[currentFrame],
+                                       imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE,
                                        &imageIndex);
 
 
@@ -946,17 +940,16 @@ namespace vkbase
     }
 
     //DEBUG
-    //статический метод(СОБЫТИЕ) для вывода сообщений отладки from vulkan
-
     inline VKAPI_ATTR VkBool32 VKAPI_CALL
     EngineBase::debugCallback(
             VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType,
             const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData
     )
     {
-
+        //extract this(function is static)
         auto thiz = reinterpret_cast<EngineBase *>(pUserData);
 
+        //write message depending on severity
         switch (messageSeverity)
         {
             case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
@@ -978,27 +971,18 @@ namespace vkbase
         return VK_FALSE;
     }
 
-    //инициализация структуры месседжера отладки при создании instance
 
-
-
-    //создает мессенжер отладки
     inline void EngineBase::setupDebugMessenger()
     {
-        //если слои проверки отключены вернутся
+        //if validation layers disabled - do nothing
         if (!enableValidationLayers)
             return;
-        //инфа для создание месседжера
-        VkDebugUtilsMessengerCreateInfoEXT createInfo;
-        createInfo = {};
+
+        VkDebugUtilsMessengerCreateInfoEXT createInfo{};
         populateDebugMessengerCreateInfo(createInfo);
-
-
-        //создать месседтжер
-        if (CreateDebugUtilsMessengerEXT(instance/*экзэмпляр Vk*/, &createInfo/*stuct info*/, nullptr,
-                                         &debugMessenger/*дескриптор на выходе*/) != VK_SUCCESS)
+        if (CreateDebugUtilsMessengerEXT(instance, &createInfo, nullptr, &debugMessenger/*out handle*/) != VK_SUCCESS)
         {
-            throw std::runtime_error("failed to set up debug messenger!");
+            throw std::runtime_error("Failed to set up debug messenger!");
         }
     }
 
@@ -1029,28 +1013,25 @@ namespace vkbase
 
     bool EngineBase::checkValidationLayerSupport()
     {
+        //get vulkan available layers(currently installed on system)
         uint32_t layerCount;
-        //запрос на получение длины списка
-        vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
-        //теперь создание массива доступных
-        VkLayerProperties* availableLayers=new VkLayerProperties[layerCount];
-        //повторный запрос уже с возвратом по ссылке через параметр
-        //массив хранит доступные слои проверки
-        vkEnumerateInstanceLayerProperties(&layerCount, availableLayers);
-        //поиск необходимых слоев в SDK
-        for (const char* chekingLayers : validationLayers)
+        vkEnumerateInstanceLayerProperties(&layerCount, nullptr);//get size
+        std::vector<VkLayerProperties> availableLayers(layerCount);
+        vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());//get data
+
+        //check that all necessary layers are in the list
+        for (const char* checkingLayers : validationLayers)
         {
-            bool checking=false;
+            bool found= false;
             for (uint32_t i=0;i<layerCount;++i)
             {
-                std::cout<<availableLayers[i].layerName<<std::endl;
-                if (strcmp(chekingLayers, availableLayers[i].layerName) == 0)
+                if (strcmp(checkingLayers, availableLayers[i].layerName) == 0)
                 {
-                    checking = true;
+                    found= true;
                     break;
                 }
             }
-            if (!checking)
+            if (!found)
                 return false;
         }
         return true;
@@ -1066,5 +1047,170 @@ namespace vkbase
         createInfo.pUserData=this;
     }
 
+    VkShaderModule EngineBase::createShaderModule(const std::vector<char> &code)
+    {
+        if(code.size()%4!=0)
+            throw std::runtime_error("Incorrect spir-v shader code size: "+std::to_string(code.size()));
 
+        VkShaderModuleCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        createInfo.codeSize = code.size();
+        //cast char array to uint32_t array pointer
+        createInfo.pCode = reinterpret_cast<const uint32_t *>(code.data());
+
+        //creating a module
+        VkShaderModule shaderModule;
+        if (vkCreateShaderModule(logicalDevice, &createInfo, nullptr, &shaderModule) != VK_SUCCESS)
+        {
+            throw std::runtime_error("failed to create shader module!");
+        }
+        return shaderModule;
+    }
+
+    [[maybe_unused]] VkShaderModule EngineBase::loadPrecompiledShader(const std::string &filename)
+    {
+        std::vector<char> code=sysRes->load_file((filename+".spv").c_str());
+        if (code.empty())
+            throw std::runtime_error("failed to load precompiled shader file: "+filename+"spv");
+        return createShaderModule(code);
+
+    }
+
+
+#if VKBASE_SHADER_RUNTIME_COMPILE
+    VkShaderModule EngineBase::loadSourceShader(const std::string &filename, bool save)
+    {
+        std::vector<char> code=sysRes->load_file((filename).c_str());
+        if (code.empty())
+            throw std::runtime_error("failed to load source shader file: "+filename);
+
+        std::vector<char> compiledCode=compileShader(code,filename);
+
+        //save compiled shader
+
+        return createShaderModule(compiledCode);
+    }
+
+    VkShaderModule EngineBase::loadShader(const std::string &filename)
+    {
+        return VK_NULL_HANDLE;
+    }
+
+    std::vector<char> EngineBase::compileShader(const std::vector<char>& source, const std::string &fileName)
+    {
+        shaderc::Compiler compiler;
+        shaderc::CompileOptions options;
+
+        //decide shader type by extension
+        shaderc_shader_kind kind;
+        std::string extension= fileName.substr(fileName.find_last_of('.') + 1);
+        if (extension=="vert")
+            kind=shaderc_shader_kind::shaderc_glsl_vertex_shader;
+        else if (extension=="frag")
+            kind=shaderc_shader_kind::shaderc_glsl_fragment_shader;
+        else if (extension=="comp")
+            kind=shaderc_shader_kind::shaderc_glsl_compute_shader;
+        else if (extension=="tesc")
+            kind=shaderc_shader_kind::shaderc_glsl_tess_control_shader;
+        else if (extension=="tese")
+            kind=shaderc_shader_kind::shaderc_glsl_tess_evaluation_shader;
+        else if (extension=="geom")
+            kind=shaderc_shader_kind::shaderc_glsl_geometry_shader;
+        else if (extension=="rgen")
+            kind=shaderc_shader_kind::shaderc_glsl_raygen_shader;
+        else if (extension=="rint")
+            kind=shaderc_shader_kind::shaderc_glsl_intersection_shader;
+        else if (extension=="rahit")
+            kind=shaderc_shader_kind::shaderc_glsl_anyhit_shader;
+        else if (extension=="rchit")
+            kind=shaderc_shader_kind::shaderc_glsl_closesthit_shader;
+        else if (extension=="rmiss")
+            kind=shaderc_shader_kind::shaderc_glsl_miss_shader;
+        else if (extension=="rcall")
+            kind=shaderc_shader_kind::shaderc_glsl_callable_shader;
+        else if (extension=="mesh")
+            kind=shaderc_shader_kind::shaderc_glsl_mesh_shader;
+        else if (extension=="task")
+            kind=shaderc_shader_kind::shaderc_glsl_task_shader;
+        else if (extension=="spv")
+            kind=shaderc_shader_kind::shaderc_spirv_assembly;
+        else
+            throw std::runtime_error("Unknown shader extension: "+extension);
+
+
+
+        // Like -DMY_DEFINE=1
+        //options.AddMacroDefinition( "MY_DEFINE", "1" );
+        options.SetOptimizationLevel( shaderc_optimization_level_size );
+
+
+        shaderc::SpvCompilationResult module = compiler.CompileGlslToSpv( source.data() ,source.size(), kind, fileName.c_str(), options);
+
+        if( module.GetCompilationStatus() != shaderc_compilation_status_success ) {
+            throw std::runtime_error(module.GetErrorMessage());
+        }
+
+        //get compiled code as byte vector
+        return std::vector<char>{reinterpret_cast<const char*>( module.cbegin()), reinterpret_cast<const char*>( module.cend()) };
+    }
+
+
+    EngineBase::QueueFamilyIndices EngineBase::findQueueFamilies(VkPhysicalDevice physicalDevice)
+    {
+        //output struct
+        QueueFamilyIndices indices;
+
+        //retrieve list of queue families
+        uint32_t queueFamilyCount;
+
+        //get count of queue families
+        vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, nullptr);
+
+        //get array of queue families
+        std::vector<VkQueueFamilyProperties> queueFamilyProperties(queueFamilyCount);
+        vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, queueFamilyProperties.data());
+
+        //iterating and checking properties
+        for (uint32_t i = 0; i < queueFamilyCount; ++i)
+        {
+            //check if queue family supports graphics operations
+            if (queueFamilyProperties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
+                indices.graphicsFamily = i;
+
+            //check if i-family supports presentation to surface
+            VkBool32 presentSupport = false;
+            vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, i, surface, &presentSupport);
+
+            if (presentSupport)
+                indices.presentFamily = i;
+
+            //if all properties are found, break
+            if (indices.isComplete())
+                break;
+        }
+
+
+        return indices;
+    }
+
+    uint32_t EngineBase::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties, VkMemoryHeapFlags heapFlags)
+    {
+        //query available types memory on the device (gets an array of memory types and heaps)
+        VkPhysicalDeviceMemoryProperties memProperties;
+        vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties/*out*/);
+
+
+        //typeFilter bits in order from the end means under what indices the memory can be selected
+        //the memory type must support all properties and belong to a heap with supported flags
+        for (uint32_t i = 0; i < memProperties.memoryTypeCount; ++i)
+        {
+            if ((typeFilter & (1 << i))&& (memProperties.memoryTypes[i].propertyFlags & properties) == properties &&
+                (memProperties.memoryHeaps[memProperties.memoryTypes[i].heapIndex].flags && heapFlags) == heapFlags)
+                return i;
+        }
+
+        throw std::runtime_error("failed to find suitable memory type!");
+    }
+
+#endif
 }

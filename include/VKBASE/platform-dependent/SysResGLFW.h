@@ -1,8 +1,10 @@
 #pragma once
+#include <fstream>
 
 #include <vulkan/vulkan.h>
 #include "vkbase/include/VKBASE/ISysRes.h"
 #include "GLFW/glfw3.h"
+
 
 class SysResGLFW: public ISysRes
 {
@@ -22,7 +24,7 @@ public:
         std::ifstream file(path, std::ios::ate | std::ios::binary);
 
         if (!file.is_open()) {
-            throw std::runtime_error("failed to open file!");
+            throw std::runtime_error("failed to open file on disk!");
         }
 
         //create vector of char with size of file size
@@ -52,25 +54,18 @@ public:
 
     std::vector<const char *> getRequiredInstanceExtensions() override
     {
-        //count
         uint32_t glfwExtensionCount = 0;
-        //получаем из glfw
+        //get from glfw
         const char **glfwExtensions;
-        //запрос количества зарегестрированых расширений
         glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-        //инициализация вектора
-        //vector можно инициализировав передав начальный и послеконечный элемент (как я узнал позже интератор)
-        //массива так как для foreach
         std::vector<const char *> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
 
-
-        //ну и возврат необходимых для работы расширений
         return extensions;
     }
 
     void info(const std::string &message) override
     {
-        //std::cout << message << std::endl;
+        std::cout << message << std::endl;
     }
 
     void error(const std::string &message) override

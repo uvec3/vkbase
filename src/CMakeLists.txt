@@ -3,7 +3,6 @@ project(vkbase_proj)
 
 
 
-
 ######################################
 ###PLATFORM DEPENDENT CONFIGURATION###
 ######################################
@@ -11,7 +10,7 @@ project(vkbase_proj)
 if(${ANDROID})
 	list(APPEND PLATFORM_DEPEND_SOURCES ../include/VKBASE/platform-dependent/AndroidSysRes.cpp)
 else()
-	#list(APPEND PLATFORM_DEPEND_SOURCES ../include/VKBASE/platform-dependent/SysResGLFW.cpp)
+#	list(APPEND PLATFORM_DEPEND_SOURCES ../include/VKBASE/platform-dependent/SysResGLFW.cpp)
 endif()
 
 
@@ -28,7 +27,7 @@ find_package(Vulkan REQUIRED)
 ###TARGET###
 ############
 
-add_library(vkbase_e Buffer.cpp EngineBase.cpp Image.cpp MyVkAdditional.cpp
+add_library(vkbase_e Buffer.cpp EngineBase.cpp Image.cpp
 		${PLATFORM_DEPEND_SOURCES}
 		)
 
@@ -40,7 +39,7 @@ add_library(vkbase_e Buffer.cpp EngineBase.cpp Image.cpp MyVkAdditional.cpp
 target_include_directories(
 		vkbase_e
 		PUBLIC ${Vulkan_INCLUDE_DIRS}
-
+		PUBLIC ${Vulkan_INCLUDE_DIRS}/../Third-Party/Include
 )
 
 
@@ -53,3 +52,17 @@ target_link_libraries(
 		vkbase_e
 		PUBLIC ${Vulkan_LIBRARIES}
 )
+
+if(VKBASE_SHADER_RUNTIME_COMPILE)
+	target_link_libraries(vkbase_e PUBLIC shaderc)
+endif()
+
+
+#################
+###DEFINITIONS###
+#################
+
+if(VKBASE_SHADER_RUNTIME_COMPILE)
+	target_compile_definitions(vkbase_e PUBLIC VKBASE_SHADER_RUNTIME_COMPILE=1)
+endif()
+

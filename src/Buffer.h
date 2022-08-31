@@ -1,10 +1,7 @@
 #pragma once
 
+
 #include<vulkan/vulkan.hpp>
-#include <stdexcept>//for runtime_error
-#include <vector>
-#include <fstream>
-#include <memory>
 #include "EngineBase.h"
 
 class RTEngine;
@@ -37,15 +34,15 @@ namespace vkbase
 
 
 
-        //Constructor
-        Buffer(const BufferAttributes& bufferAttributes);
-        //Constructor wrapper
-        Buffer(EngineBase *eng, uint32_t size, VkBufferUsageFlags usage, VkMemoryPropertyFlags memProperties, VkMemoryHeapFlags heapFlags = 0) ;
+        //create
+        void create (const BufferAttributes& bufferAttributes);
+        //create wrapper
+        void create (EngineBase *eng, uint32_t size, VkBufferUsageFlags usage, VkMemoryPropertyFlags memProperties, VkMemoryHeapFlags heapFlags = 0) ;
 
         //open buffer for reading from host and get pointer to memory
-        void* map(size_t from, size_t size);
+        void* map();
         //unmap memory
-        void unMap();
+        void unmap();
 
         //for implicit conversion to VkBuffer
         inline operator VkBuffer()
@@ -58,7 +55,7 @@ namespace vkbase
         //copy data to buffer
         bool copyTo(VkBuffer dstBuffer, uint32_t copySize);
 
-        ~Buffer();
+        void destroy();
     };
 
 }

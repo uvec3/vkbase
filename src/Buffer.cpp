@@ -1,12 +1,12 @@
 #include "Buffer.h"
-#include "MyVkAdditional.h"
 #include "EngineBase.h"
-#include "vulkan/vulkan_raii.hpp"
+#include <stdexcept>//for runtime_error
+#include "vulkan/vulkan.hpp"
 
 namespace vkbase
 {
 
-    Buffer::Buffer(const BufferAttributes& bufferAttributes)
+    void Buffer::create(const BufferAttributes& bufferAttributes)
     {
 
 
@@ -36,7 +36,7 @@ namespace vkbase
         VkMemoryAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         allocInfo.allocationSize = memRequirements.size;
-        allocInfo.memoryTypeIndex = findMemoryType(info.eng->physicalDevice, memRequirements.memoryTypeBits, info.memProperties, info.heapFlags);
+        allocInfo.memoryTypeIndex = info.eng->findMemoryType( memRequirements.memoryTypeBits, info.memProperties, info.heapFlags);
 
         //allocate memory for the buffer (vkFreeMemory frees memory)
         if (vkAllocateMemory(info.eng->logicalDevice, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS)
@@ -48,22 +48,23 @@ namespace vkbase
 
     }
 
-    Buffer::Buffer(EngineBase *eng, uint32_t size, VkBufferUsageFlags usage, VkMemoryPropertyFlags memProperties, VkMemoryHeapFlags heapFlags)
-    :Buffer(BufferAttributes{eng, size, usage, memProperties, heapFlags})
-    {}
+    void Buffer::create(EngineBase *eng, uint32_t size, VkBufferUsageFlags usage, VkMemoryPropertyFlags memProperties, VkMemoryHeapFlags heapFlags)
+    {
+        create(BufferAttributes{eng, size, usage, memProperties, heapFlags});
+    }
 
 
 
 
-    void* Buffer::map(size_t from, size_t size)
+    void* Buffer::map()
     {
         void* data;
         //size can be VK_WHOLE_SIZE
-        vkMapMemory(info.eng->logicalDevice, bufferMemory, from, size, 0, &data/*ptr on out ptr*/);
+        vkMapMemory(info.eng->logicalDevice, bufferMemory, 0, VK_WHOLE_SIZE, 0, &data/*ptr on out ptr*/);
         return data;
     }
 
-    void Buffer::unMap()
+    void Buffer::unmap()
     {
         //hide the memory
         vkUnmapMemory(info.eng->logicalDevice, bufferMemory);
@@ -124,7 +125,7 @@ namespace vkbase
         return true;
     }
 
-    Buffer::~Buffer()
+    void Buffer::destroy()
     {
         vkDestroyBuffer(info.eng->logicalDevice, buffer, nullptr);
         vkFreeMemory(info.eng->logicalDevice, bufferMemory, nullptr);
