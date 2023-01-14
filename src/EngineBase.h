@@ -51,7 +51,7 @@ namespace vkbase
 //CONSTANTS
     protected:
         //the desired number of frames to be processed simultaneously (corrected when creating a swapchain with restrictions)
-        const ingit t MAX_FRAMES_IN_FLIGHT = 2;
+        const int MAX_FRAMES_IN_FLIGHT = 2;
 
         //required extensions for device
         const std::vector<const char *> deviceExtensions{

@@ -7,6 +7,10 @@ set(VKBASE_SHADER_RUNTIME_COMPILE ON CACHE BOOL "Compile shaders at runtime exte
 
 
 if(VKBASE_SHADER_RUNTIME_COMPILE)
+	find_package(Python COMPONENTS Interpreter REQUIRED)
+	execute_process(
+			COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/third_party/shaderc/utils/git-sync-deps
+	)
 	set(SHADERC_SKIP_TESTS true)
 	add_subdirectory(third_party/shaderc)
 endif()

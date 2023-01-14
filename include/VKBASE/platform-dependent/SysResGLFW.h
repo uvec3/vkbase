@@ -10,18 +10,22 @@ class SysResGLFW: public ISysRes
 {
 private:
     GLFWwindow* m_window;
+    std::string m_resourcesPath="";
 
 public:
 
-    SysResGLFW(GLFWwindow *window)
+    SysResGLFW(GLFWwindow *window,std::string resourcesPath="")
     {
-        m_window = window;
+        if(!resourcesPath.empty()&& resourcesPath.back()!='/')
+            resourcesPath.push_back('/');
+        m_resourcesPath= resourcesPath;
+        m_window= window;
     }
 
     std::vector<char> load_file(const char *path) override
     {
         //open file in binary mode and go to the end
-        std::ifstream file(path, std::ios::ate | std::ios::binary);
+        std::ifstream file(m_resourcesPath+path, std::ios::ate | std::ios::binary);
 
         if (!file.is_open()) {
             throw std::runtime_error("failed to open file on disk!");
