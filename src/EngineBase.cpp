@@ -15,25 +15,16 @@
 
 namespace vkbase
 {
-    void EngineBase::setExtent(int width, int height)
-    {
-        WIDTH = width;
-        HEIGHT = height;
-        recreateSwapChain();
-    }
-
-    void EngineBase::init(ISysRes& sysRes, int width, int height)
+    void EngineBase::init(ISysRes& sysRes)
     {
         #if VKBASE_SHADER_RUNTIME_COMPILE
             std::cout << "Shader runtime compile enabled" << std::endl;
         #endif
 
         this->sysRes=&sysRes;
-        WIDTH = width;
-        HEIGHT = height;
         createInstance();
         setupDebugMessenger();
-        surface=this->sysRes->createSurface(instance);
+        surface= this->sysRes->createSurface(instance);
         pickPhysicalDevice();
         queueFamilyIndices = findQueueFamilies(physicalDevice);
         createLogicalDevice();
@@ -304,34 +295,26 @@ namespace vkbase
 
     //SETUP SWAP CHAIN
 
-    inline void EngineBase::recreateSwapChain()
+    void EngineBase::recreateSwapChain()
     {
-        //если окно свернуто или один из размеров(ширина или высота) равен нулю то создать
-        //кадровый буфер не получитс€, да и смысла нет поэтому ждем пока размеры не станут коректными
-        //также очевидно, что основной поток(рисовани€ из которого вызываетс€ recreateSwapChain )
-        //приостанавливатс€ пока размеры не будут корректны
-        if (WIDTH == 0 || HEIGHT == 0)
+        //frame buffer can not be zero
+        if (sysRes->getWidth() == 0 || sysRes->getHeight() == 0)
             return;
-        //дожидаетс€ завершени€ работы(заставл€ет CPU(текущий поток) ждать пока все изображени€ цепи не нарисуютс€)
-        //необходимо так как нельз€ очищать используемые оъекты(приведет к ошибке)
+
+        //wait present queue
         vkQueueWaitIdle(presentQueue);
 
-        //удаление объектов цепи и св€заных с ней( если созданы)
-        if (swapChain != VK_NULL_HANDLE)
-            cleanupSwapChain();
+        //cleanup existed swap chain
+        cleanupSwapChain();
 
-        //создание цепочки кадров
+        //create again
         createSwapChain();
-        //обернуть изображени€ цепи
+
+
         createImageViews();
 
-
-#if DEPTH_BUFFER
-        //создать необходимые обьекты дл€ работы буффера глубины
-        createDepthResources();
-#endif
-        //создать кадровые буферы
         createFrameBuffers();
+
         //дл€ отладки
         std::cout << "Swap chain was recreated\n";
     }
@@ -339,9 +322,7 @@ namespace vkbase
 
     inline void EngineBase::cleanupSwapChain()
     {
-        //очищает(не удал€ет что бы не пересоздавать) коммандный пул от коммандных буферов
-        //    vkFreeCommandBuffers(logicalDevice, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
-        //удаление кадровых буферов
+        //delete framebuffers
         for (auto framebuffer: swapChainFramebuffers)
         {
             vkDestroyFramebuffer(logicalDevice, framebuffer, nullptr);
@@ -356,9 +337,8 @@ namespace vkbase
         vkDestroySwapchainKHR(logicalDevice, swapChain, nullptr);
     }
 
-    //создание цепи обмена
 
-    inline void EngineBase::createSwapChain()//вызоы в init vulkan
+    inline void EngineBase::createSwapChain()
     {
         //запрос деталей
         SwapChainSupportDetails swapChainDetalis = querySwapChainSupport(physicalDevice);
@@ -367,7 +347,7 @@ namespace vkbase
         //режима презентации
         VkPresentModeKHR presentMode = chooseSwapPresentMode(swapChainDetalis.presentModes);
         //размер изображени€
-        VkExtent2D extent = chooseSwapExtent(swapChainDetalis.capabilities);
+        extent = chooseSwapExtent(swapChainDetalis.capabilities);
 
         //следующий параметр- это минимальное количество кадров в цепочке обмена
         /*swapChainDetalis.capabilities.minImageCount-минимальное доступное количество кадров в цепи
@@ -581,11 +561,11 @@ namespace vkbase
         VkExtent2D actualExtent = {};
         //большее из (минимальной доступной ширины и меньшего из(максимально доступной ширины и шириной окна ))
         actualExtent.width = std::max(capabilities.minImageExtent.width,
-                                      std::min(capabilities.maxImageExtent.width, static_cast<uint32_t>(WIDTH)));
+                                      std::min(capabilities.maxImageExtent.width, static_cast<uint32_t>(sysRes->getWidth())));
         //тоже что и с шириной если высота экрана между макс и мин то так и оставл€ю если же больше макс то макс, если меньше мин то мин
         actualExtent.height = std::max(capabilities.minImageExtent.height,
-                                       std::min(capabilities.maxImageExtent.height, static_cast<uint32_t>(HEIGHT)));
-        //возврат расширени€
+                                       std::min(capabilities.maxImageExtent.height, static_cast<uint32_t>(sysRes->getHeight())));
+
         return actualExtent;
     }
 

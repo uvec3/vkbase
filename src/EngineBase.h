@@ -73,9 +73,6 @@ namespace vkbase
     protected:
         //representation of system (contains platform-dependent methods for loading files, creating surface, etc.)
         ISysRes* sysRes;
-        //window size
-        int WIDTH = 1000;
-        int HEIGHT = 500;
         //VK instance
         VkInstance instance{nullptr};
         //debug messenger(response for debug layers)
@@ -101,6 +98,8 @@ namespace vkbase
         std::vector<VkFramebuffer> swapChainFramebuffers;
         //array of image views for each image in the swapchain
         std::vector<VkImageView> swapChainImageViews;
+
+        VkExtent2D extent;
 
 
         //output image format
@@ -135,12 +134,11 @@ namespace vkbase
 //METHODS
     public:
         //initialization of the engine
-        virtual void init(ISysRes& sysRes, int width, int height);
+        virtual void init(ISysRes& sysRes);
         //check swapchain, process all changes, update all data, rendering and presentation
         void drawFrame();
         //change extent of swapchain
         //engine should always be informed about window resizing
-        virtual void setExtent(int width, int height);
         //clear all resources and destroy all Vulkan objects
         void cleanup();
     protected:
@@ -152,7 +150,6 @@ namespace vkbase
         virtual void createRenderPass() =0;
 
     //SETUP VULKAN DEVICES
-    private:
 
         //create instance
         void createInstance();
@@ -179,7 +176,7 @@ namespace vkbase
     //SWAP CHAIN
 
         void createSwapChain();
-        void recreateSwapChain();
+        virtual void recreateSwapChain();
         void cleanupSwapChain();
 
         //create image views for each image in the swapchain

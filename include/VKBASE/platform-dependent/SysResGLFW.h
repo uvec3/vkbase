@@ -10,11 +10,11 @@ class SysResGLFW: public ISysRes
 {
 private:
     GLFWwindow* m_window;
-    std::string m_resourcesPath="";
+    std::string m_resourcesPath= "";
 
 public:
 
-    SysResGLFW(GLFWwindow *window,std::string resourcesPath="")
+    explicit SysResGLFW(GLFWwindow *window,std::string resourcesPath="")
     {
         if(!resourcesPath.empty()&& resourcesPath.back()!='/')
             resourcesPath.push_back('/');
@@ -53,6 +53,21 @@ public:
             throw std::runtime_error("Failed to create window surface!");
         }
         return surface;
+    }
+
+
+    int getWidth() override
+    {
+        int width;
+        glfwGetFramebufferSize(m_window, &width, nullptr);
+        return width;
+    }
+
+    int getHeight() override
+    {
+        int height;
+        glfwGetFramebufferSize(m_window, nullptr, &height);
+        return height;
     }
 
 

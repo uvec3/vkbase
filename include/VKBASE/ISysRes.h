@@ -6,7 +6,7 @@
 //necessary for creating engine
 //you can use one of existed classes which implement this interface
 //or define your own
-    class ISysRes
+class ISysRes
 {
 public:
     //load files for Engine (return empty vector if file not found)
@@ -18,9 +18,15 @@ public:
     //create VkSurfaceKHR for output
     virtual VkSurfaceKHR createSurface(VkInstance instance) = 0;
 
+    virtual int getWidth()=0;
+
+    virtual int getHeight()=0;
+
     virtual void info(const std::string& message)=0;
 
     virtual void error(const std::string& message)=0;
 
     virtual void warning(const std::string& message)=0;
+
+    virtual void initIMGUI(){};
 };
