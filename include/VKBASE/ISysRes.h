@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
-#include <vulkan/vulkan.hpp>
+#include <string>
+#include <vulkan/vulkan.h>
 
 //system-dependent methods interface
 //necessary for creating engine

@@ -1,7 +1,7 @@
 #include "Buffer.h"
 #include "EngineBase.h"
 #include <stdexcept>//for runtime_error
-#include "vulkan/vulkan.hpp"
+#include "vulkan/vulkan.h"
 
 namespace vkbase
 {

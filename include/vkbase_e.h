@@ -4,6 +4,6 @@
 #include "../src/EngineBase.h"
 #include "../src/Buffer.h"
 #include "../src/Image.h"
-#include "vkbase/include/VKBASE/ISysRes.h"
+#include "VKBASE/ISysRes.h"
 
 #endif //VKBASE_E_H

@@ -1,10 +1,12 @@
 cmake_minimum_required(VERSION 3.16)
 project(vkbase)
-set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD 20)
 
 
 set(VKBASE_SHADER_RUNTIME_COMPILE ON CACHE BOOL "Compile shaders at runtime extension for EngineBase")
 
+#print message
+message(STATUS "!!!!!!!!!!!!!!!!!!!!!!!!!!!VKBASE_SHADER_RUNTIME_COMPILE: ${VKBASE_SHADER_RUNTIME_COMPILE}")
 
 if(VKBASE_SHADER_RUNTIME_COMPILE)
 	find_package(Python COMPONENTS Interpreter REQUIRED)

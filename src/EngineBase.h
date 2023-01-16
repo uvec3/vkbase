@@ -1,8 +1,9 @@
 #pragma once
 #include <optional>
-#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan.h>
 #include "Image.h"
-#include "vkbase/include/VKBASE/ISysRes.h"
+#include <array>
+#include "../include/VKBASE/ISysRes.h"
 #if VKBASE_SHADER_RUNTIME_COMPILE
     #include <shaderc/shaderc.hpp>
 #endif

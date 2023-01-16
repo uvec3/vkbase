@@ -8,7 +8,7 @@ project(vkbase_proj)
 ######################################
 
 if(${ANDROID})
-	list(APPEND PLATFORM_DEPEND_SOURCES ../include/VKBASE/platform-dependent/AndroidSysRes.cpp)
+	list(APPEND PLATFORM_DEPEND_SOURCES )
 else()
 #	list(APPEND PLATFORM_DEPEND_SOURCES ../include/VKBASE/platform-dependent/SysResGLFW.cpp)
 endif()
@@ -40,6 +40,7 @@ target_include_directories(
 		vkbase_e
 		PUBLIC ${Vulkan_INCLUDE_DIRS}
 		PUBLIC ${Vulkan_INCLUDE_DIRS}/../Third-Party/Include
+		PUBLIC ../include
 )
 
 
