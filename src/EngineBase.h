@@ -8,6 +8,9 @@
     #include <shaderc/shaderc.hpp>
 #endif
 
+
+
+
 namespace vkbase
 {
     class EngineBase
@@ -37,11 +40,11 @@ namespace vkbase
             }
         };
 
-        //struct for storing info about swapchain
+        //struct for storing info about surface capabilities on selected physical device
         struct SwapChainSupportDetails
         {
-            //Basic features of the surface (minimum / maximum number of images in the exchange chain,
-            //min/max width and height of images)
+            //Basic features of the surface (minimum / maximum  number of images in the exchange chain,
+            //min/max/current width and height of images, supported transforms)
             VkSurfaceCapabilitiesKHR capabilities;
             // Surface formats (pixel format, color space)
             std::vector<VkSurfaceFormatKHR> formats;
@@ -52,19 +55,22 @@ namespace vkbase
 //CONSTANTS
     protected:
         //the desired number of frames to be processed simultaneously (corrected when creating a swapchain with restrictions)
-        const int MAX_FRAMES_IN_FLIGHT = 2;
+        uint32_t imageCount = 2;
 
         //required extensions for device
         const std::vector<const char *> deviceExtensions{
             VK_KHR_SWAPCHAIN_EXTENSION_NAME
         };
 
+        //required features for device
+        const VkPhysicalDeviceFeatures deviceFeatures{};
+
         //ValidationLayers
         static constexpr std::array<const char*, 1> validationLayers = {
         "VK_LAYER_KHRONOS_validation"
         };
 #ifdef NDEBUG//Release
-	    constexpr bool enableValidationLayers = false;
+	    static constexpr bool enableValidationLayers = false;
 #else//DEBUG
         static constexpr bool enableValidationLayers = true;
 #endif
@@ -100,7 +106,7 @@ namespace vkbase
         //array of image views for each image in the swapchain
         std::vector<VkImageView> swapChainImageViews;
 
-        VkExtent2D extent;
+
 
 
         //output image format
@@ -112,7 +118,7 @@ namespace vkbase
         //command pool
         VkCommandPool commandPool{VK_NULL_HANDLE};
         //command pool with support for buffer overwriting without the need to flush the pool
-        VkCommandPool commandPoolRest{VK_NULL_HANDLE};
+        VkCommandPool commandPoolReset{VK_NULL_HANDLE};
         //command buffers for each frame in the swapchain(released when the command pool is destroyed)
         std::vector<VkCommandBuffer> cbRender;
 
@@ -123,8 +129,7 @@ namespace vkbase
         std::vector<VkSemaphore> renderFinishedSemaphores;
 
     //FENCES (sync CPU & GPU)
-        //image available fence
-        std::vector<VkFence> fenceImageAvailable;
+
         std::vector<VkFence> fenceRenderFinished;
 
         uint32_t currentFrame{0};
@@ -158,17 +163,17 @@ namespace vkbase
         //find a suitable physical device
         void pickPhysicalDevice();
 
-        //----------------------------------------------------------------------------------------------------------------------
+        //check if physical device supports all requirements
         bool isDeviseSuitable(VkPhysicalDevice &physDevise);
 
-        //----------------------------------------------------------------------------
+        //check if physical device supports all required extensions
         bool checkDeviceExtensionSupport(VkPhysicalDevice device);
 
         //create logical device
         void createLogicalDevice();
 
         //find necessary queue families for selected device
-        inline QueueFamilyIndices findQueueFamilies(VkPhysicalDevice physicalDevice);
+        inline QueueFamilyIndices findQueueFamilies(VkPhysicalDevice physDevice);
 
 
         uint32_t findMemoryType( uint32_t typeFilter, VkMemoryPropertyFlags properties,
@@ -184,16 +189,19 @@ namespace vkbase
         void createImageViews();
 
         //query swapchain support details
-        SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
+        SwapChainSupportDetails querySwapChainDetails(VkPhysicalDevice physDevice);
 
         //choose swapchain surface format
-        VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &availableFormats);
+        static  VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &availableFormats);
 
         //choose swapchain present mode
-        VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes);
+        static VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes);
 
         //choose extent
         VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities);
+
+        //choose composite alpha
+        static VkCompositeAlphaFlagBitsKHR chooseSwapChainCompositeAlpha(VkCompositeAlphaFlagsKHR availableAlpha);
 
         //create framebuffers for each image in the swapchain
         void createFrameBuffers();
@@ -205,7 +213,7 @@ namespace vkbase
         void createCommandPool();
 
         //create command pool with support for buffer overwriting without the need to flush the entire pool
-        void createCommandPoolRest();
+        void createCommandPoolReset();
 
     //SYNC OBJECTS
 
@@ -255,6 +263,9 @@ namespace vkbase
         //try find compiled shader file, if not found - compile it from source
         [[maybe_unused]] VkShaderModule loadShader(const std::string& filename);
        #endif
+
+        static std::string getDeviceName(VkPhysicalDevice device);
+
 
     };
 }

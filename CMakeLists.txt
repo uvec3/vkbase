@@ -3,7 +3,7 @@ project(vkbase)
 set(CMAKE_CXX_STANDARD 20)
 
 
-set(VKBASE_SHADER_RUNTIME_COMPILE ON CACHE BOOL "Compile shaders at runtime extension for EngineBase")
+set(VKBASE_SHADER_RUNTIME_COMPILE OFF CACHE BOOL "Compile shaders at runtime extension for EngineBase")
 
 #print message
 message(STATUS "!!!!!!!!!!!!!!!!!!!!!!!!!!!VKBASE_SHADER_RUNTIME_COMPILE: ${VKBASE_SHADER_RUNTIME_COMPILE}")

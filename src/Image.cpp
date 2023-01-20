@@ -15,15 +15,16 @@ namespace vkbase
         //Create image
         VkImageCreateInfo imageInfo{};
         imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        //type of image
-        /*VK_IMAGE_TYPE_1D = 0,
-        VK_IMAGE_TYPE_2D = 1,
-        VK_IMAGE_TYPE_3D = 2*/
+
+        //type of image:
+        //VK_IMAGE_TYPE_1D,
+        //VK_IMAGE_TYPE_2D,
+        //VK_IMAGE_TYPE_3D
         imageInfo.imageType = VK_IMAGE_TYPE_2D;
         //extent of image
         imageInfo.extent.width = width;//optional
         imageInfo.extent.height = height;//optional
-        //depth of image(only for 3D images?)
+        //depth of image (only for 3D images)
         imageInfo.extent.depth = 1;
         //count of mip levels
         imageInfo.mipLevels = 1;
