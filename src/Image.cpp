@@ -53,14 +53,14 @@ namespace vkbase
         //image will be used only by one queue family
         imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-        if (vkCreateImage(eng->logicalDevice, &imageInfo, nullptr, &image) != VK_SUCCESS)
+        if (vkCreateImage(eng->device, &imageInfo, nullptr, &image) != VK_SUCCESS)
         {
             throw std::runtime_error("failed to create image!");
         }
 
         //get memory requirements for the image
         VkMemoryRequirements memRequirements;
-        vkGetImageMemoryRequirements(eng->logicalDevice, image, &memRequirements);
+        vkGetImageMemoryRequirements(eng->device, image, &memRequirements);
 
         //Allocate memory for the image
         VkMemoryAllocateInfo allocInfo{};
@@ -68,13 +68,13 @@ namespace vkbase
         allocInfo.allocationSize = memRequirements.size;
         allocInfo.memoryTypeIndex = eng->findMemoryType( memRequirements.memoryTypeBits, memProperty, heapFlags);
 
-        if (vkAllocateMemory(eng->logicalDevice, &allocInfo, nullptr, &memory) != VK_SUCCESS)
+        if (vkAllocateMemory(eng->device, &allocInfo, nullptr, &memory) != VK_SUCCESS)
         {
             throw std::runtime_error("failed to allocate image memory!");
         }
 
         //bind image to memory
-        vkBindImageMemory(eng->logicalDevice, image, memory, 0);
+        vkBindImageMemory(eng->device, image, memory, 0);
 
 
 
@@ -91,7 +91,7 @@ namespace vkbase
         viewInfo.subresourceRange.baseArrayLayer = 0;
         viewInfo.subresourceRange.layerCount = 1;
 
-        if (vkCreateImageView(eng->logicalDevice, &viewInfo, nullptr, &imageView) != VK_SUCCESS)
+        if (vkCreateImageView(eng->device, &viewInfo, nullptr, &imageView) != VK_SUCCESS)
         {
             throw std::runtime_error("failed to create texture image view!");
         }
@@ -99,9 +99,9 @@ namespace vkbase
 
     void Image::destroy()
     {
-        vkDestroyImageView(eng->logicalDevice, imageView, nullptr);
-        vkDestroyImage(eng->logicalDevice, image, nullptr);
-        vkFreeMemory(eng->logicalDevice, memory, nullptr);
+        vkDestroyImageView(eng->device, imageView, nullptr);
+        vkDestroyImage(eng->device, image, nullptr);
+        vkFreeMemory(eng->device, memory, nullptr);
     }
 
 

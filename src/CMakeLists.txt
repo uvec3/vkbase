@@ -29,7 +29,13 @@ find_package(Vulkan REQUIRED)
 
 add_library(vkbase_e Buffer.cpp EngineBase.cpp Image.cpp
 		${PLATFORM_DEPEND_SOURCES}
-		)
+
+		../third_party/imgui/imgui.cpp
+		../third_party/imgui/imgui_draw.cpp
+		../third_party/imgui/imgui_demo.cpp
+		../third_party/imgui/imgui_tables.cpp
+		../third_party/imgui/imgui_widgets.cpp
+		../third_party/imgui/backends/imgui_impl_vulkan.cpp)
 
 
 #############
@@ -42,7 +48,7 @@ target_include_directories(
 		PUBLIC ${Vulkan_INCLUDE_DIRS}/../Third-Party/Include
 		PUBLIC ../include
 		PUBLIC ../third_party/glm
-
+		PUBLIC ../third_party/imgui
 )
 
 

@@ -4,6 +4,7 @@
 #include <vulkan/vulkan.h>
 
 #include "vkbase/include/VKBASE/ISysRes.h"
+#include <backends/imgui_impl_glfw.h>
 
 
 
@@ -97,6 +98,22 @@ public:
     {
         std::cout << message << std::endl;
     }
+
+    virtual void initIMGUIPlatformBackend() override
+    {
+        ImGui_ImplGlfw_InitForVulkan(m_window, true);
+    }
+
+    virtual void shutdownIMGUIPlatformBackend() override
+    {
+        ImGui_ImplGlfw_Shutdown();
+    }
+
+    virtual void newFrameIMGUIPlatformBackend() override
+    {
+        ImGui_ImplGlfw_NewFrame();
+    }
+
 
 };
 

@@ -1,12 +1,16 @@
 #pragma once
 #include <optional>
-#include <vulkan/vulkan.h>
-#include "Image.h"
 #include <array>
-#include "../include/VKBASE/ISysRes.h"
+
+#include <vulkan/vulkan.h>
+#include <imgui.h>
 #if VKBASE_SHADER_RUNTIME_COMPILE
-    #include <shaderc/shaderc.hpp>
+#include <shaderc/shaderc.hpp>
 #endif
+
+
+#include "../include/VKBASE/ISysRes.h"
+#include "Image.h"
 
 
 
@@ -69,11 +73,12 @@ namespace vkbase
         static constexpr std::array<const char*, 1> validationLayers = {
         "VK_LAYER_KHRONOS_validation"
         };
-#ifdef NDEBUG//Release
+
+        #ifdef NDEBUG//Release
 	    static constexpr bool enableValidationLayers = false;
-#else//DEBUG
+        #else//DEBUG
         static constexpr bool enableValidationLayers = true;
-#endif
+        #endif
 
 
 //VARS
@@ -88,7 +93,7 @@ namespace vkbase
         // will be implicitly destroyed in vkDestroyInstance
         VkPhysicalDevice physicalDevice;
         //logical device
-        VkDevice logicalDevice;
+        VkDevice device;
         //queue family indices
         QueueFamilyIndices queueFamilyIndices;
         //graphics queue handle (don't need to destroy)
@@ -107,8 +112,6 @@ namespace vkbase
         std::vector<VkImageView> swapChainImageViews;
 
 
-
-
         //output image format
         VkFormat swapChainImageFormat;
         //output image extent
@@ -121,6 +124,9 @@ namespace vkbase
         VkCommandPool commandPoolReset{VK_NULL_HANDLE};
         //command buffers for each frame in the swapchain(released when the command pool is destroyed)
         std::vector<VkCommandBuffer> cbRender;
+
+        std::vector<VkCommandBuffer> cbMain;
+
 
     //SEMAPHORES (sync GPU & GPU) for each frame
         //image available for rendering
@@ -135,6 +141,14 @@ namespace vkbase
         uint32_t currentFrame{0};
 
         bool windowResized{false};
+    //imgui
+        VkDescriptorPool imguiDescriptorPool{VK_NULL_HANDLE};
+
+        std::vector<VkCommandBuffer> cbIMGUI;
+
+        ImGuiIO* imguiIO;
+
+        ImDrawData* imguiDrawData= nullptr;
 
 
 //METHODS
@@ -153,7 +167,7 @@ namespace vkbase
         //called before submit command buffer
         virtual void drawPrepare() = 0;
         //describe the render pass
-        virtual void createRenderPass() =0;
+        void createRenderPass();
 
     //SETUP VULKAN DEVICES
 
@@ -215,6 +229,12 @@ namespace vkbase
         //create command pool with support for buffer overwriting without the need to flush the entire pool
         void createCommandPoolReset();
 
+        void createRenderBuffers();
+
+        void createMainCommandBuffers();
+
+        void rewriteMainBuffer(int imageIndex);
+
     //SYNC OBJECTS
 
         void createSyncObjects();
@@ -244,6 +264,13 @@ namespace vkbase
         //this structure uses twice: instance creation && DebugMessenger
         inline void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
 
+        //IMGUI
+        void initIMGUI();
+        void cleanupIMGUI();
+        void createIMGUIDescriptorPool();
+        void createIMGUICommandBuffers();
+        void renderIMGUI();
+        void rewriteIMGUICommandBuffer(int imageIndex);
 
     //ADDITIONAL METHODS FOR INHERITANCE CLASSES
     protected:
@@ -265,6 +292,9 @@ namespace vkbase
        #endif
 
         static std::string getDeviceName(VkPhysicalDevice device);
+    public:
+
+        void showDebugWindow();
 
 
     };

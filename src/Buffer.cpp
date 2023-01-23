@@ -20,7 +20,7 @@ namespace vkbase
         bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
 
-        if (vkCreateBuffer(info.eng->logicalDevice, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
+        if (vkCreateBuffer(info.eng->device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create buffer!");
         }
 
@@ -29,7 +29,7 @@ namespace vkbase
         //      VkDeviceSize    alignment;          alignment, in bytes, of the offset within the allocation required for the resource.
         //      uint32_t        memoryTypeBits;     is a bitmask and contains one bit set for every supported memory type for the resource.
         VkMemoryRequirements memRequirements;
-        vkGetBufferMemoryRequirements(info.eng->logicalDevice, buffer, &memRequirements/*out*/);
+        vkGetBufferMemoryRequirements(info.eng->device, buffer, &memRequirements/*out*/);
 
 
         //structure describing the memory allocation parameters
@@ -39,12 +39,12 @@ namespace vkbase
         allocInfo.memoryTypeIndex = info.eng->findMemoryType( memRequirements.memoryTypeBits, info.memProperties, info.heapFlags);
 
         //allocate memory for the buffer (vkFreeMemory frees memory)
-        if (vkAllocateMemory(info.eng->logicalDevice, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS)
+        if (vkAllocateMemory(info.eng->device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS)
             throw std::runtime_error("failed to allocate vertex buffer memory");
 
         //bind buffer to memory
         //offset is the offset from the start of the memory where the buffer should be bound.
-        vkBindBufferMemory(info.eng->logicalDevice, buffer, bufferMemory, 0);
+        vkBindBufferMemory(info.eng->device, buffer, bufferMemory, 0);
 
     }
 
@@ -60,14 +60,14 @@ namespace vkbase
     {
         void* data;
         //size can be VK_WHOLE_SIZE
-        vkMapMemory(info.eng->logicalDevice, bufferMemory, 0, VK_WHOLE_SIZE, 0, &data/*ptr on out ptr*/);
+        vkMapMemory(info.eng->device, bufferMemory, 0, VK_WHOLE_SIZE, 0, &data/*ptr on out ptr*/);
         return data;
     }
 
     void Buffer::unmap()
     {
         //hide the memory
-        vkUnmapMemory(info.eng->logicalDevice, bufferMemory);
+        vkUnmapMemory(info.eng->device, bufferMemory);
     }
 
     VkCommandBuffer Buffer::createCommandForCopy(VkBuffer dstBuffer, uint32_t copySize)
@@ -81,7 +81,7 @@ namespace vkbase
 
 
         VkCommandBuffer commandBuffer;
-        vkAllocateCommandBuffers(info.eng->logicalDevice, &allocInfo, &commandBuffer);
+        vkAllocateCommandBuffers(info.eng->device, &allocInfo, &commandBuffer);
 
         //Write command buffer
         VkCommandBufferBeginInfo beginInfo{};
@@ -120,15 +120,15 @@ namespace vkbase
         //wait for the queue to finish the command buffer
         vkQueueWaitIdle(info.eng->graphicsQueue);
         //free COMMAND buffer
-        vkFreeCommandBuffers(info.eng->logicalDevice, info.eng->commandPool, 1, &commandBuffer);
+        vkFreeCommandBuffers(info.eng->device, info.eng->commandPool, 1, &commandBuffer);
 
         return true;
     }
 
     void Buffer::destroy()
     {
-        vkDestroyBuffer(info.eng->logicalDevice, buffer, nullptr);
-        vkFreeMemory(info.eng->logicalDevice, bufferMemory, nullptr);
+        vkDestroyBuffer(info.eng->device, buffer, nullptr);
+        vkFreeMemory(info.eng->device, bufferMemory, nullptr);
     }
 
 

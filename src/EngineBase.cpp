@@ -11,6 +11,7 @@
 #if VKBASE_SHADER_RUNTIME_COMPILE
     #include <shaderc/shaderc.hpp>
 #endif
+#include <backends/imgui_impl_vulkan.h>
 
 #include "EngineBase.h"
 
@@ -39,6 +40,9 @@ namespace vkbase
         createSyncObjects();
         createCommandPool();
         createCommandPoolReset();
+        createMainCommandBuffers();
+        createRenderBuffers();
+        initIMGUI();
         setupLogic();
     }
 
@@ -148,9 +152,8 @@ namespace vkbase
     inline bool EngineBase::isDeviseSuitable(VkPhysicalDevice &physDevise)
     {
         //acquire device properties(can be used to find the best device)
-//        VkPhysicalDeviceProperties deviceProperties;
-//        vkGetPhysicalDeviceProperties(physDevise, &deviceProperties);
-
+        //VkPhysicalDeviceProperties deviceProperties;
+        //vkGetPhysicalDeviceProperties(physDevise, &deviceProperties);
 
         //check extensions support (defined in deviceExtensions)
         if (!checkDeviceExtensionSupport(physDevise))
@@ -163,7 +166,6 @@ namespace vkbase
         //at least one image format and one present mode is required
         if (swapChainSupport.formats.empty() || swapChainSupport.presentModes.empty())
             return false;
-
 
 
         //find device queue families
@@ -254,7 +256,7 @@ namespace vkbase
         auto err=vkCreateDevice(physicalDevice,//physical device to create logical device for
                                 &createInfo,
                                 nullptr,
-                                &logicalDevice/*out handle*/);
+                                &device/*out handle*/);
         //error handling
         if (err != VK_SUCCESS)
         {
@@ -290,12 +292,12 @@ namespace vkbase
         }
 
         //get queue handles of logical device
-        vkGetDeviceQueue(logicalDevice,//logical device on which queues are created
+        vkGetDeviceQueue(device,//logical device on which queues are created
                          queueFamilyIndices.graphicsFamily.value(),//queue family index
                          0,//exact queue index in family (0 if only one queue of this family on this device was created)
                          &graphicsQueue//out handle
                          );
-        vkGetDeviceQueue(logicalDevice, queueFamilyIndices.presentFamily.value(), 0, &presentQueue);
+        vkGetDeviceQueue(device, queueFamilyIndices.presentFamily.value(), 0, &presentQueue);
     }
 
     //SETUP SWAP CHAIN
@@ -329,16 +331,16 @@ namespace vkbase
         //delete framebuffers
         for (auto framebuffer: swapChainFramebuffers)
         {
-            vkDestroyFramebuffer(logicalDevice, framebuffer, nullptr);
+            vkDestroyFramebuffer(device, framebuffer, nullptr);
         }
 
         //delete image views
         for (auto imageView: swapChainImageViews)
         {
-            vkDestroyImageView(logicalDevice, imageView, nullptr);
+            vkDestroyImageView(device, imageView, nullptr);
         }
         //delete swap chain
-        vkDestroySwapchainKHR(logicalDevice, swapChain, nullptr);
+        vkDestroySwapchainKHR(device, swapChain, nullptr);
     }
 
 
@@ -412,16 +414,16 @@ namespace vkbase
         createInfo.clipped = VK_TRUE;
         //old swap chain
         createInfo.oldSwapchain = VK_NULL_HANDLE;
-        if (vkCreateSwapchainKHR(logicalDevice, &createInfo, nullptr, &swapChain/*out handle*/) != VK_SUCCESS)
+        if (vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapChain/*out handle*/) != VK_SUCCESS)
         {
             throw std::runtime_error("failed to create swap chain!");
         }
 
         //get swap chain images size (swap chain can create more than minImageCount images)
-        vkGetSwapchainImagesKHR(logicalDevice, swapChain, &imageCount, nullptr);
+        vkGetSwapchainImagesKHR(device, swapChain, &imageCount, nullptr);
         //get swap chain images
         swapChainImages.resize(imageCount);
-        vkGetSwapchainImagesKHR(logicalDevice, swapChain, &imageCount, swapChainImages.data());
+        vkGetSwapchainImagesKHR(device, swapChain, &imageCount, swapChainImages.data());
 
         //save swap chain details
         swapChainImageFormat = surfaceFormat.format;
@@ -545,7 +547,7 @@ namespace vkbase
             createInfo.subresourceRange.layerCount = 1;
 
             //create image view
-            if (vkCreateImageView(logicalDevice, &createInfo, nullptr,&swapChainImageViews[i]/*out handle*/) != VK_SUCCESS)
+            if (vkCreateImageView(device, &createInfo, nullptr, &swapChainImageViews[i]/*out handle*/) != VK_SUCCESS)
             {
                 throw std::runtime_error("failed to create image views!");
             }
@@ -583,7 +585,7 @@ namespace vkbase
             //layers
             framebufferInfo.layers = 1;
 
-            if (vkCreateFramebuffer(logicalDevice, &framebufferInfo, nullptr, &swapChainFramebuffers[i]) != VK_SUCCESS)
+            if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapChainFramebuffers[i]) != VK_SUCCESS)
             {
                 throw std::runtime_error("failed to create framebuffer!");
             }
@@ -605,7 +607,7 @@ namespace vkbase
         poolInfo.flags = 0;
 
         //create poll (command poll will be destroyed in cleanup function)
-        if (vkCreateCommandPool(logicalDevice, &poolInfo, nullptr,&commandPool/*out handle*/) != VK_SUCCESS)
+        if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool/*out handle*/) != VK_SUCCESS)
             throw std::runtime_error("Failed to create command pool!");
     }
 
@@ -622,11 +624,211 @@ namespace vkbase
         poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT
                 | VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
 
-        if (vkCreateCommandPool(logicalDevice, &poolInfo, nullptr,
+        if (vkCreateCommandPool(device, &poolInfo, nullptr,
                                 &commandPoolReset/*out handle*/) != VK_SUCCESS)
             throw std::runtime_error("Failed to create command pool with reset flag!");
     }
 
+
+    void EngineBase::createRenderBuffers()
+    {
+        //command buffers for each frame
+        cbRender.resize(imageCount);
+
+
+        VkCommandBufferAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        //command pool from which command buffers will be allocated
+        allocInfo.commandPool = commandPool;
+        /*VK_COMMAND_BUFFER_LEVEL_PRIMARY: primary command buffers are the ones that can be submitted to a queue for execution.
+        VK_COMMAND_BUFFER_LEVEL_SECONDARY: Cannot be submitted directly, but can be called from the primary command buffers.*/
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_SECONDARY;
+        //number of command buffers to allocate
+        allocInfo.commandBufferCount = (uint32_t)cbRender.size();
+
+        //create command buffers
+        if (vkAllocateCommandBuffers(device, &allocInfo, cbRender.data()) != VK_SUCCESS) {
+            throw std::runtime_error("failed to allocate command buffers!");
+        }
+
+    }
+
+    void EngineBase::createMainCommandBuffers()
+    {
+        //command buffers for each frame
+        cbMain.resize(imageCount);
+
+        VkCommandBufferAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        //command pool from which command buffers will be allocated
+        allocInfo.commandPool = commandPoolReset;
+        /*VK_COMMAND_BUFFER_LEVEL_PRIMARY: primary command buffers are the ones that can be submitted to a queue for execution.
+        VK_COMMAND_BUFFER_LEVEL_SECONDARY: Cannot be submitted directly, but can be called from the primary command buffers.*/
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        //number of command buffers to allocate
+        allocInfo.commandBufferCount = (uint32_t)cbMain.size();
+
+        //create command buffers
+        if (vkAllocateCommandBuffers(device, &allocInfo, cbMain.data()) != VK_SUCCESS) {
+            throw std::runtime_error("failed to allocate main command buffers!");
+        }
+        vkResetCommandBuffer(cbMain[0], 0);
+    }
+
+    void EngineBase::rewriteMainBuffer(int imageIndex)
+    {
+        VkCommandBuffer& cb = cbMain[imageIndex];
+
+        vkResetCommandBuffer(cb, 0);
+
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        //         VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT specifies that each recording of the command buffer will only be submitted once, and the command buffer will be reset and recorded again between each submission.
+        //         VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT specifies that a secondary command buffer is considered to be entirely inside a render pass. If this is a primary command buffer, then this bit is ignored.
+        //         VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT specifies that a command buffer can be resubmitted to a queue while it is in the pending state, and recorded into multiple primary command buffers.
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT; // Optional
+        // for secondary buffer only (indicates which state to inherit from calling primary command buffer)
+        beginInfo.pInheritanceInfo = nullptr; // Optional
+
+        if (vkBeginCommandBuffer(cbMain[imageIndex], &beginInfo) != VK_SUCCESS) {
+            throw std::runtime_error("failed to begin recording main command buffer!");
+        }
+        // record commands
+        {
+            //render pass
+            VkRenderPassBeginInfo renderPassInfo{};
+            renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+
+            renderPassInfo.renderPass = renderPass;
+
+            renderPassInfo.framebuffer = swapChainFramebuffers[imageIndex];
+
+            renderPassInfo.renderArea.offset = {0, 0};
+            renderPassInfo.renderArea.extent = swapChainExtent;
+
+            //VK_SUBPASS_CONTENTS_INLINE: Render pass commands will be inlined in the primary command buffer itself, and no secondary command buffers will be executed.
+            //VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS: Render pass commands will be executed from secondary command buffers.
+            vkCmdBeginRenderPass(cb, &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+            {
+                //call secondary command buffer for rendering
+                vkCmdExecuteCommands(cb, 1, &cbRender[imageIndex]);
+                //call secondary command buffer for ui
+                vkCmdExecuteCommands(cb, 1, &cbIMGUI[imageIndex]);
+            }
+
+            vkCmdEndRenderPass(cb);
+        }
+
+
+        if (vkEndCommandBuffer(cb) != VK_SUCCESS) {
+            throw std::runtime_error("failed to record command buffer!");
+        }
+        
+
+    }
+
+
+    void EngineBase::createRenderPass()
+    {
+
+        //attachments
+
+        //color attachment
+        VkAttachmentDescription colorAttachment{};
+        //format of the attachment (swap chain image)
+        colorAttachment.format = swapChainImageFormat;
+        //color attachment samples (VK_SAMPLE_COUNT_1_BIT: no multisampling)
+        colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        //determine what to do with the data(color and depth) in the attachment before rendering
+        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        //determine what to do with the data(color and depth) in the attachment after rendering
+        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+        //what to do with the stencil data in the attachment before rendering
+        colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        //what to do with the stencil data in the attachment after rendering
+        colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+        //what layout the image will have before the render pass starts (VK_IMAGE_LAYOUT_UNDEFINED: don't care)
+        colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        //image layout image will have after the render pass
+        //VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL: Images used as color attachment
+        //VK_IMAGE_LAYOUT_PRESENT_SRC_KHR: Images to be presented in the swap chain
+        //VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL: Images to be used as destination for a memory copy operation
+        colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+        //array of attachments
+        std::vector<VkAttachmentDescription> attachments = {colorAttachment};
+
+        //reference to the color attachment in the array(uses by subpass)
+        VkAttachmentReference colorAttachmentRef{};
+        //index of the attachment in the array
+        colorAttachmentRef.attachment = 0;
+        //image layout
+        colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+
+        //describe subpass (only one now)
+        VkSubpassDescription subpass{};
+        //what type of pipeline supported by this subpass
+        //VK_PIPELINE_BIND_POINT_COMPUTE specifies binding as a compute pipeline.
+        //VK_PIPELINE_BIND_POINT_GRAPHICS specifies binding as a graphics pipeline.
+        //VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR specifies binding as a ray tracing pipeline.
+        //VK_PIPELINE_BIND_POINT_SUBPASS_SHADING_HUAWEI specifies binding as a subpass shading pipeline.
+        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        //attachment references
+        subpass.colorAttachmentCount = 1;
+        subpass.pColorAttachments = &colorAttachmentRef;
+        //Other possible attachments that are used by subpass
+        //pInputAttachments: Attachments that are read from a shader
+        //pResolveAttachments: Attachments used for multisampling color attachments
+        //pDepthStencilAttachment: Attachment for depth and stencil data
+        //pPreserveAttachments: Attachments that are not used by this subpass, but for which the data must be preserved
+
+
+
+        //describe dependencies between subpasses
+        VkSubpassDependency dependency{};
+
+        //is the subpass index of the first subpass in the dependency
+        //(If srcSubpass is equal to VK_SUBPASS_EXTERNAL, the first synchronization scope includes commands that occur earlier in submission order than the vkCmdBeginRenderPass used to begin the render pass instance)
+        dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+        dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependency.srcAccessMask = 0;/*beginning*/
+
+        //the subpass index of the second subpass in the dependency
+        //(If dstSubpass is equal to VK_SUBPASS_EXTERNAL, the second synchronization scope includes commands that occur later in submission order than the vkCmdEndRenderPass used to end the render pass instance. )
+        dependency.dstSubpass = 0;
+        dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+
+
+
+
+        //describe render pass
+        VkRenderPassCreateInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+
+        //array of all attachments
+        renderPassInfo.pAttachments = attachments.data();
+        renderPassInfo.attachmentCount = attachments.size();
+
+        //subpasses
+        renderPassInfo.subpassCount = 1;
+        renderPassInfo.pSubpasses = &subpass;
+
+        //dependencies between pairs of subpasses
+        renderPassInfo.dependencyCount = 1;
+        renderPassInfo.pDependencies = &dependency;
+
+        //create render pass
+        if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Failed to create render pass!");
+        }
+
+    }
 
 
     inline void EngineBase::createSyncObjects()
@@ -649,9 +851,9 @@ namespace vkbase
         //create all in one loop
         for (int i = 0; i < imageCount; ++i)
         {
-            if (vkCreateSemaphore(logicalDevice, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS ||
-                vkCreateSemaphore(logicalDevice, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]) != VK_SUCCESS ||
-                vkCreateFence(logicalDevice, &fenceInfo, nullptr, &fenceRenderFinished[i]) != VK_SUCCESS)
+            if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS ||
+                vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]) != VK_SUCCESS ||
+                vkCreateFence(device, &fenceInfo, nullptr, &fenceRenderFinished[i]) != VK_SUCCESS)
             {
                 throw std::runtime_error("failed to create sync objects!");
             }
@@ -662,15 +864,18 @@ namespace vkbase
 
     void EngineBase::drawFrame()
     {
-        static VkResult result;
+        VkResult result;
+
+        //render ui before acquire next image(it will be executed anyway and acquiring image can make thread wait)
+        renderIMGUI();
+
         //current swap chain image index
         static uint32_t imageIndex;
-
 
         //timeout specifies how long the function waits, in nanoseconds, if no image is available
         //If timeout is zero, then vkAcquireNextImageKHR does not wait, and will either successfully acquire an image, or fail and return VK_NOT_READY if no image is available.
         //If the specified timeout period expires before an image is acquired, vkAcquireNextImageKHR returns VK_TIMEOUT. If timeout is UINT64_MAX, the timeout period is treated as infinite, and vkAcquireNextImageKHR will block until an image is acquired or an error occurs.
-        result = vkAcquireNextImageKHR(logicalDevice, swapChain,
+        result = vkAcquireNextImageKHR(device, swapChain,
                                        UINT64_MAX,//timeout
                                        imageAvailableSemaphores[currentFrame],//semaphore
                                        VK_NULL_HANDLE,//fence
@@ -712,7 +917,7 @@ namespace vkbase
 
         //command buffer(s) to submit
         submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &cbRender[imageIndex];
+        submitInfo.pCommandBuffers = &cbMain[imageIndex];
 
         //wait for image available semaphore
         VkSemaphore waitSemaphores[]{imageAvailableSemaphores[currentFrame]};
@@ -733,10 +938,13 @@ namespace vkbase
 
         //wait for fence to be signaled (previous render finished for this frame) (make cpu wait and don't draw more frames than is in swap chain)
         //called just before vkQueueSubmit so everything is ready for next frame drawing at this point
-        vkWaitForFences(logicalDevice, 1/*count*/, &fenceRenderFinished[imageIndex], VK_TRUE/*wait all in array*/,
+        vkWaitForFences(device, 1/*count*/, &fenceRenderFinished[imageIndex], VK_TRUE/*wait all in array*/,
                         UINT64_MAX);
         //reset fence (will not pass through vkWaitForFences until it is signaled again)
-        vkResetFences(logicalDevice, 1, &fenceRenderFinished[imageIndex]);
+        vkResetFences(device, 1, &fenceRenderFinished[imageIndex]);
+
+        rewriteIMGUICommandBuffer(imageIndex);
+        rewriteMainBuffer(imageIndex);
 
         //submit command buffer to graphics queue
         if (vkQueueSubmit(graphicsQueue, 1, &submitInfo/*ptr on array of struct*/, fenceRenderFinished[imageIndex]) != VK_SUCCESS)
@@ -782,31 +990,34 @@ namespace vkbase
     void EngineBase::cleanup()
     {
         //wait for all queues on device to finish(cause errors otherwise)
-        vkDeviceWaitIdle(logicalDevice);
+        vkDeviceWaitIdle(device);
 
 #if DEPTH_BUFFER
         for (int i = 0; i < imageCount; ++i)
             depthImages[i].destroy();
 #endif
 
+        cleanupIMGUI();
+
+
         cleanupSwapChain();
 
-        vkDestroyRenderPass(logicalDevice, renderPass, nullptr);
+        vkDestroyRenderPass(device, renderPass, nullptr);
 
 
         for (int i = 0; i < imageCount; ++i)
         {
-            vkDestroySemaphore(logicalDevice, renderFinishedSemaphores[i], nullptr);
-            vkDestroySemaphore(logicalDevice, imageAvailableSemaphores[i], nullptr);
-            vkDestroyFence(logicalDevice, fenceRenderFinished[i], nullptr);
+            vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
+            vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
+            vkDestroyFence(device, fenceRenderFinished[i], nullptr);
         }
 
 
-        vkDestroyCommandPool(logicalDevice, commandPool, nullptr);
-        vkDestroyCommandPool(logicalDevice, commandPoolReset, nullptr);
+        vkDestroyCommandPool(device, commandPool, nullptr);
+        vkDestroyCommandPool(device, commandPoolReset, nullptr);
 
 
-        vkDestroyDevice(logicalDevice, nullptr);
+        vkDestroyDevice(device, nullptr);
 
         if (enableValidationLayers)
         {
@@ -938,7 +1149,7 @@ namespace vkbase
 
         //creating a module
         VkShaderModule shaderModule;
-        if (vkCreateShaderModule(logicalDevice, &createInfo, nullptr, &shaderModule) != VK_SUCCESS)
+        if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS)
         {
             throw std::runtime_error("failed to create shader module!");
         }
@@ -1094,5 +1305,224 @@ namespace vkbase
         vkGetPhysicalDeviceProperties(device, &properties);
         return properties.deviceName;
     }
+
+    void EngineBase::initIMGUI()
+    {
+        // Setup Dear ImGui context
+        IMGUI_CHECKVERSION();
+        ImGui::CreateContext();
+        imguiIO = &ImGui::GetIO(); (void)imguiIO;
+        imguiIO->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;       // Enable Keyboard Controls
+        //imguiIO->ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+        imguiIO->ConfigFlags |= ImGuiConfigFlags_DockingEnable;           // Enable Docking
+        imguiIO->ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;         // Enable Multi-Viewport / Platform Windows
+        //imguiIO.ConfigViewportsNoAutoMerge = true;
+        //imguiIO.ConfigViewportsNoTaskBarIcon = true;
+
+        // Setup Dear ImGui style
+        //ImGui::StyleColorsDark();
+        ImGui::StyleColorsLight();
+
+        // When viewports are enabled we tweak WindowRounding/WindowBg so platform windows can look identical to regular ones.
+        ImGuiStyle& style = ImGui::GetStyle();
+        if (imguiIO->ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+        {
+            style.WindowRounding = 0.0f;
+            style.Colors[ImGuiCol_WindowBg].w = 1.0f;
+        }
+
+        //create descriptor pool for imgui
+        createIMGUIDescriptorPool();
+        //
+        createIMGUICommandBuffers();
+
+        //setup platform backend
+        sysRes->initIMGUIPlatformBackend();
+
+        //setup renderer(vulkan) backend
+        ImGui_ImplVulkan_InitInfo init_info = {};
+        init_info.Instance = instance;
+        init_info.PhysicalDevice = physicalDevice;
+        init_info.Device = device;
+        init_info.QueueFamily = queueFamilyIndices.graphicsFamily.value();
+        init_info.Queue = graphicsQueue;
+        init_info.PipelineCache = VK_NULL_HANDLE;
+        init_info.DescriptorPool = imguiDescriptorPool;
+        init_info.Allocator = nullptr;
+        init_info.MinImageCount = 2;
+        init_info.ImageCount = 2;
+        init_info.CheckVkResultFn = nullptr;
+        ImGui_ImplVulkan_Init(&init_info, renderPass);
+
+        // Upload Fonts
+        {
+            // Use any command queue
+            VkCommandPool command_pool = commandPoolReset;
+            VkCommandBuffer command_buffer = cbMain[0];
+
+            vkResetCommandPool(device, command_pool, 0);
+
+            VkCommandBufferBeginInfo begin_info = {};
+            begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            begin_info.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+            vkBeginCommandBuffer(command_buffer, &begin_info);
+
+            ImGui_ImplVulkan_CreateFontsTexture(command_buffer);
+
+            VkSubmitInfo end_info = {};
+            end_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            end_info.commandBufferCount = 1;
+            end_info.pCommandBuffers = &command_buffer;
+            vkEndCommandBuffer(command_buffer);
+            vkQueueSubmit(graphicsQueue, 1, &end_info, VK_NULL_HANDLE);
+
+            vkDeviceWaitIdle(device);
+
+            ImGui_ImplVulkan_DestroyFontUploadObjects();
+
+            vkResetCommandPool(device, command_pool, 0);
+        }
+
+        // Start the Dear ImGui frame
+        ImGui_ImplVulkan_NewFrame();
+        sysRes->newFrameIMGUIPlatformBackend();
+        ImGui::NewFrame();
+    }
+
+    void EngineBase::createIMGUIDescriptorPool()
+    {
+        VkDescriptorPoolSize pool_sizes[] =
+                {
+                        { VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
+                        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
+                        { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000 },
+                        { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000 },
+                        { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000 },
+                        { VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000 },
+                        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000 },
+                        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000 },
+                        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000 },
+                        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000 },
+                        { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000 }
+                };
+        VkDescriptorPoolCreateInfo pool_info = {};
+        pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+        pool_info.maxSets = 1000 * IM_ARRAYSIZE(pool_sizes);
+        pool_info.poolSizeCount = (uint32_t)IM_ARRAYSIZE(pool_sizes);
+        pool_info.pPoolSizes = pool_sizes;
+        if(vkCreateDescriptorPool(device, &pool_info, nullptr, &imguiDescriptorPool)!=VK_SUCCESS)
+            throw std::runtime_error("failed to create descriptor pool for IMGUI!");
+
+    }
+
+    void EngineBase::createIMGUICommandBuffers()
+    {
+        //command buffers for each frame
+        cbIMGUI.resize(imageCount);
+
+        VkCommandBufferAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        //command pool from which command buffers will be allocated
+        allocInfo.commandPool = commandPoolReset;
+        /*VK_COMMAND_BUFFER_LEVEL_PRIMARY: primary command buffers are the ones that can be submitted to a queue for execution.
+        VK_COMMAND_BUFFER_LEVEL_SECONDARY: Cannot be submitted directly, but can be called from the primary command buffers.*/
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_SECONDARY;
+        //number of command buffers to allocate
+        allocInfo.commandBufferCount = (uint32_t)cbIMGUI.size();
+
+        //create command buffers
+        if (vkAllocateCommandBuffers(device, &allocInfo, cbIMGUI.data()) != VK_SUCCESS) {
+            throw std::runtime_error("failed to allocate command buffers!");
+        }
+    }
+
+
+    void EngineBase::cleanupIMGUI()
+    {
+        vkDestroyDescriptorPool(device, imguiDescriptorPool, nullptr);
+        ImGui_ImplVulkan_Shutdown();
+        sysRes->shutdownIMGUIPlatformBackend();
+        ImGui::DestroyContext();
+    }
+
+    void EngineBase::renderIMGUI()
+    {
+        //Finish writing IMGUI commands and start rendering
+        ImGui::Render();
+        //get data for rendering
+        imguiDrawData = ImGui::GetDrawData();
+
+        // Update and Render additional Platform Windows
+        if (imguiIO->ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+        {
+            ImGui::UpdatePlatformWindows();
+            ImGui::RenderPlatformWindowsDefault();
+        }
+
+
+    }
+
+    void EngineBase::rewriteIMGUICommandBuffer(int imageIndex)
+    {
+        VkCommandBuffer cb = cbIMGUI[imageIndex];
+
+        vkResetCommandBuffer(cb, 0);
+
+        //command buffer will be submitted as secondary buffer, so we need to specify inheritance info
+        VkCommandBufferInheritanceInfo inheritanceInfo{};
+        inheritanceInfo.sType= VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+        inheritanceInfo.renderPass = renderPass;
+        inheritanceInfo.subpass = 0;
+        inheritanceInfo.framebuffer = swapChainFramebuffers[imageIndex];
+        inheritanceInfo.occlusionQueryEnable = VK_FALSE;
+        inheritanceInfo.queryFlags = 0;
+        inheritanceInfo.pipelineStatistics = 0;
+
+
+
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        //         VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT specifies that each recording of the command buffer will only be submitted once, and the command buffer will be reset and recorded again between each submission.
+        //         VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT specifies that a secondary command buffer is considered to be entirely inside a render pass. If this is a primary command buffer, then this bit is ignored.
+        //         VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT specifies that a command buffer can be resubmitted to a queue while it is in the pending state, and recorded into multiple primary command buffers.
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT; // Optional
+        // for secondary buffer only (indicates which state to inherit from calling primary command buffer)
+        beginInfo.pInheritanceInfo = &inheritanceInfo; // Optional
+
+        if (vkBeginCommandBuffer(cb, &beginInfo) != VK_SUCCESS) {
+            throw std::runtime_error("failed to begin recording command buffer!");
+        }
+
+        //render commands
+        {
+            // Record dear imgui primitives into command buffer
+            ImGui_ImplVulkan_RenderDrawData(imguiDrawData, cb);
+        }
+        vkEndCommandBuffer(cb);
+
+
+        //After everything is written to command buffer we can start new Dear ImGui frame
+        ImGui_ImplVulkan_NewFrame();
+        sysRes->newFrameIMGUIPlatformBackend();
+        ImGui::NewFrame();
+
+    }
+
+    void EngineBase::showDebugWindow()
+    {
+        ImGui::Begin("Debug Window");
+        ImGui::Text("Hello World!");
+        ImGui::End();
+
+        {
+            static bool show_demo_window = true;
+            if (show_demo_window)
+                ImGui::ShowDemoWindow(&show_demo_window);
+            ImGui::Text("This is some useful text.");
+        }
+    }
+
+
 }
 

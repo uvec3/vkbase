@@ -29,5 +29,9 @@ public:
 
     virtual void warning(const std::string& message)=0;
 
-    virtual void initIMGUI(){};
+    virtual void initIMGUIPlatformBackend()=0;
+
+    virtual void shutdownIMGUIPlatformBackend()=0;
+
+    virtual void newFrameIMGUIPlatformBackend()=0;
 };
