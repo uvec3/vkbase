@@ -20,10 +20,15 @@ endif()
 
 add_subdirectory(src)
 
-add_library(glfwSysRes INTERFACE)
-target_include_directories(glfwSysRes INTERFACE include/VKBASE/platform-dependent/SysResGLFW.h)
-target_sources(glfwSysRes INTERFACE third_party/imgui/backends/imgui_impl_glfw.cpp)
+add_library(glfwSysRes third_party/imgui/backends/imgui_impl_glfw.cpp)
+target_include_directories(glfwSysRes
+		PUBLIC third_party/imgui
+		PUBLIC third_party/imgui/backends
+		INTERFACE include/VKBASE/platform-dependent)
 
-add_library(androidSysRes INTERFACE)
-target_include_directories(androidSysRes INTERFACE include/VKBASE/platform-dependent/AndroidSysRes.h)
-target_sources(androidSysRes INTERFACE third_party/imgui/backends/imgui_impl_android.cpp)
+
+add_library(androidSysRes third_party/imgui/backends/imgui_impl_android.cpp)
+target_include_directories(glfwSysRes
+		PUBLIC third_party/imgui
+		PUBLIC third_party/imgui/backends
+		INTERFACE include/VKBASE/platform-dependent)
