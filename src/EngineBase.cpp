@@ -16,7 +16,6 @@
 #include "EngineBase.h"
 
 
-
 namespace vkbase
 {
     void EngineBase::init(ISysRes& pSysRes)
