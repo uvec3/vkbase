@@ -3,8 +3,10 @@
 #define MANDELBROD_ANDROIDSYSRES_H
 
 #include "../ISysRes.h"
-#include <game-activity/native_app_glue/android_native_app_glue.h>
 #include <vulkan/vulkan.h>
+#include <imgui.h>
+#include <imgui_impl_android.h>
+
 
 class AndroidSysRes: public ISysRes
 {
@@ -71,7 +73,20 @@ public:
         LOGW("%s", message.c_str());
     }
 
-    virtual void initIMGUI() override {};
+    void initIMGUIPlatformBackend() override
+    {
+        ImGui_ImplAndroid_Init(appInfo->window);
+    }
+
+    void shutdownIMGUIPlatformBackend() override
+    {
+        ImGui_ImplAndroid_Shutdown();
+    }
+
+    void newFrameIMGUIPlatformBackend() override
+    {
+        ImGui_ImplAndroid_NewFrame();
+    }
 
 };
 

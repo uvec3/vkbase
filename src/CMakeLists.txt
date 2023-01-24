@@ -2,30 +2,29 @@ cmake_minimum_required(VERSION 3.16)
 project(vkbase_proj)
 
 
-
-######################################
-###PLATFORM DEPENDENT CONFIGURATION###
-######################################
+########################################
+### PLATFORM DEPENDENT CONFIGURATION ###
+########################################
 
 if(${ANDROID})
-	list(APPEND PLATFORM_DEPEND_SOURCES )
+#	list(APPEND PLATFORM_DEPEND_SOURCES )
 else()
 #	list(APPEND PLATFORM_DEPEND_SOURCES ../include/VKBASE/platform-dependent/SysResGLFW.cpp)
 endif()
 
 
 
-##########
-###FIND###
-##########
+#################
+### FIND LIBS ###
+#################
 
 #find vulkan
 find_package(Vulkan REQUIRED)
 
 
-############
-###TARGET###
-############
+##############
+### TARGET ###
+##############
 
 add_library(vkbase_e Buffer.cpp EngineBase.cpp Image.cpp
 		${PLATFORM_DEPEND_SOURCES}
@@ -38,9 +37,9 @@ add_library(vkbase_e Buffer.cpp EngineBase.cpp Image.cpp
 		../third_party/imgui/backends/imgui_impl_vulkan.cpp)
 
 
-#############
-###INCLUDE###
-#############
+###############
+### INCLUDE ###
+###############
 
 target_include_directories(
 		vkbase_e
@@ -49,12 +48,13 @@ target_include_directories(
 		PUBLIC ../include
 		PUBLIC ../third_party/glm
 		PUBLIC ../third_party/imgui
+		PUBLIC ../third_party/imgui/backends
 )
 
 
-#############
-###LINKING###
-#############
+###############
+### LINKING ###
+###############
 
 #libraries
 target_link_libraries(
@@ -67,9 +67,9 @@ if(VKBASE_SHADER_RUNTIME_COMPILE)
 endif()
 
 
-#################
-###DEFINITIONS###
-#################
+###################
+### DEFINITIONS ###
+###################
 
 if(VKBASE_SHADER_RUNTIME_COMPILE)
 	target_compile_definitions(vkbase_e PUBLIC VKBASE_SHADER_RUNTIME_COMPILE=1)
