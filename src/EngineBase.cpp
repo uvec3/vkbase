@@ -1523,7 +1523,6 @@ namespace vkbase
         ImGui_ImplVulkan_NewFrame();
         sysRes->newFrameIMGUIPlatformBackend();
         ImGui::NewFrame();
-
     }
 
     void EngineBase::showDebugWindow()
