@@ -133,7 +133,20 @@ namespace vkbase
             sysRes->info("device: " + getDeviceName(physDevice));
         }
 
-        //find suitable device
+        //find suitable discrete device
+        for (VkPhysicalDevice &physDevice: devices)
+        {
+            VkPhysicalDeviceProperties properties;
+            vkGetPhysicalDeviceProperties(physDevice, &properties);
+            //get first suitable device
+            if (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && isDeviseSuitable(physDevice))
+            {
+                physicalDevice = physDevice;
+                return;
+            }
+        }
+
+        //if no discrete device find any suitable
         for (VkPhysicalDevice &physDevice: devices)
         {
             //get first suitable device
@@ -143,6 +156,8 @@ namespace vkbase
                 return;
             }
         }
+
+
         //throw error if no suitable device
         throw std::runtime_error("Physical devise has found, but do not corresponds to the parameters!");
     }
@@ -1515,10 +1530,13 @@ namespace vkbase
     {
         ImGuiIO& io = ImGui::GetIO();
 
-
+        static std::string gpuName = getDeviceName(physicalDevice);
         ImGui::Begin("Debug Window");
         ImGui::Text("FPS: %.1f", io.Framerate);
-        //ImGui::Text("Frame time: %.3f ms", io);
+        ImGui::Text("Frame time: %.3f ms", io.DeltaTime);
+        ImGui::Text("GPU: %s", gpuName.c_str());
+        ImGui::Text("Resolution: %dx%d", swapChainExtent.width, swapChainExtent.height);
+        ImGui::Text("Images count in swap chain: %d", imageCount);
         ImGui::End();
 
         bool show_demo_window = true;
