@@ -863,6 +863,9 @@ namespace vkbase
 
     void EngineBase::drawFrame()
     {
+        //virtual void for additional preparation in inherited classes
+        drawPrepare();
+
         VkResult result;
 
         //render ui before acquire next image(it will be executed anyway and acquiring image can make thread wait)
@@ -903,8 +906,7 @@ namespace vkbase
             throw std::runtime_error("failed to acquire swap chain image!");
 
 
-        //virtual void for additional preparation in inherited classes
-        drawPrepare();
+
 
 
         //RENDERING
@@ -1314,13 +1316,16 @@ namespace vkbase
         imguiIO->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;       // Enable Keyboard Controls
         //imguiIO->ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
         imguiIO->ConfigFlags |= ImGuiConfigFlags_DockingEnable;           // Enable Docking
-        imguiIO->ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;         // Enable Multi-Viewport / Platform Windows
+        //imguiIO->ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;         // Enable Multi-Viewport / Platform Windows
         //imguiIO.ConfigViewportsNoAutoMerge = true;
         //imguiIO.ConfigViewportsNoTaskBarIcon = true;
 
         // Setup Dear ImGui style
         //ImGui::StyleColorsDark();
-        ImGui::StyleColorsLight();
+        ImGui::StyleColorsClassic();
+
+        //set dpi scaling
+        ImGui::GetStyle().ScaleAllSizes(2.0f);
 
         // When viewports are enabled we tweak WindowRounding/WindowBg so platform windows can look identical to regular ones.
         ImGuiStyle& style = ImGui::GetStyle();
@@ -1458,8 +1463,6 @@ namespace vkbase
             ImGui::UpdatePlatformWindows();
             ImGui::RenderPlatformWindowsDefault();
         }
-
-
     }
 
     void EngineBase::rewriteIMGUICommandBuffer(int imageIndex)
@@ -1510,41 +1513,17 @@ namespace vkbase
 
     void EngineBase::showDebugWindow()
     {
+        ImGuiIO& io = ImGui::GetIO();
+
+
         ImGui::Begin("Debug Window");
-        ImGui::Text("Hello World!");
+        ImGui::Text("FPS: %.1f", io.Framerate);
+        //ImGui::Text("Frame time: %.3f ms", io);
         ImGui::End();
 
-        {
-            static bool show_demo_window = true;
-            static bool use_work_area = true;
-            static ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
-
-            // We demonstrate using the full viewport area or the work area (without menu-bars, task-bars etc.)
-            // Based on your use case you may want one of the other.
-            const ImGuiViewport* viewport = ImGui::GetMainViewport();
-            ImGui::SetNextWindowPos(use_work_area ? viewport->WorkPos : viewport->Pos);
-            ImGui::SetNextWindowSize(use_work_area ? viewport->WorkSize : viewport->Size);
-
-            bool p_open;
-            if (ImGui::Begin("Example: Fullscreen window", &p_open, flags))
-            {
-                ImGui::Checkbox("Use work area instead of main area", &use_work_area);
-                ImGui::SameLine();
-               // HelpMarker("Main Area = entire viewport,\nWork Area = entire viewport minus sections used by the main menu bars, task bars etc.\n\nEnable the main-menu bar in Examples menu to see the difference.");
-
-                ImGui::CheckboxFlags("ImGuiWindowFlags_NoBackground", &flags, ImGuiWindowFlags_NoBackground);
-                ImGui::CheckboxFlags("ImGuiWindowFlags_NoDecoration", &flags, ImGuiWindowFlags_NoDecoration);
-                ImGui::Indent();
-                ImGui::CheckboxFlags("ImGuiWindowFlags_NoTitleBar", &flags, ImGuiWindowFlags_NoTitleBar);
-                ImGui::CheckboxFlags("ImGuiWindowFlags_NoCollapse", &flags, ImGuiWindowFlags_NoCollapse);
-                ImGui::CheckboxFlags("ImGuiWindowFlags_NoScrollbar", &flags, ImGuiWindowFlags_NoScrollbar);
-                ImGui::Unindent();
-
-
-            }
-            ImGui::End();
-            ImGui::Text("This is some useful text.");
-        }
+        bool show_demo_window = true;
+        if (show_demo_window)
+            ImGui::ShowDemoWindow(&show_demo_window);
     }
 
 
