@@ -19,6 +19,18 @@ endif()
 #add engine base library
 add_subdirectory(src)
 
+add_library(imgui
+		third_party/imgui/imgui.cpp
+		third_party/imgui/imgui_draw.cpp
+		third_party/imgui/imgui_demo.cpp
+		third_party/imgui/imgui_tables.cpp
+		third_party/imgui/imgui_widgets.cpp
+		third_party/imgui/backends/imgui_impl_vulkan.cpp)
+target_include_directories(imgui
+		PUBLIC third_party/imgui
+		PUBLIC third_party/imgui/backends
+		INTERFACE include/VKBASE/platform-dependent)
+
 #System backend for android game activity
 add_library(glfwSysRes third_party/imgui/backends/imgui_impl_glfw.cpp)
 target_include_directories(glfwSysRes
@@ -33,3 +45,11 @@ target_include_directories(androidSysRes
 		PUBLIC third_party/imgui
 		PUBLIC third_party/imgui/backends
 		INTERFACE include/VKBASE/platform-dependent)
+
+#System backend for SDL android
+add_library(androidSDLSysRes third_party/imgui/backends/imgui_impl_sdl.cpp)
+target_include_directories(androidSDLSysRes
+		PUBLIC third_party/imgui
+		PUBLIC third_party/imgui/backends
+		INTERFACE include/VKBASE/platform-dependent)
+target_link_libraries(androidSDLSysRes SDL2 imgui)
