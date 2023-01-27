@@ -5,6 +5,14 @@
 #include <imgui.h>
 #include <imgui_impl_sdl.h>
 #include <SDL.h>
+#include <android/log.h>
+
+#define LOGI(...) \
+    ((void)__android_log_print(ANDROID_LOG_INFO, "threaded_app", __VA_ARGS__))
+#define LOGE(...) \
+    ((void)__android_log_print(ANDROID_LOG_ERROR, "threaded_app", __VA_ARGS__))
+#define LOGW(...) \
+    ((void)__android_log_print(ANDROID_LOG_WARN, "threaded_app", __VA_ARGS__))
 
 
 class AndroidSDLSysRes: public ISysRes
@@ -20,15 +28,25 @@ public:
 
     virtual std::vector<char> load_file(const char* path) override
     {
-//        std::vector<char> buffer;
-//        //asset list
-//        AAsset* asset = AAssetManager_open(appInfo->activity->assetManager, path, AASSET_MODE_BUFFER);
-//        size_t size = AAsset_getLength(asset);
-//        buffer.resize(size);
-//        AAsset_read(asset, buffer.data(), size);
-//        AAsset_close(asset);
-//        return buffer;
-        return {};
+        std::vector<char> buffer;
+
+        SDL_RWops *rw = SDL_RWFromFile(path, "rb");
+        if (rw != nullptr)
+        {
+            auto res_size = SDL_RWsize(rw);
+            buffer.resize(res_size);
+            Sint64 nb_read_total = 0, nb_read = 1;
+            char* buf = buffer.data();
+            while (nb_read_total < res_size && nb_read != 0)
+            {
+                nb_read = SDL_RWread(rw, buf, 1, (res_size - nb_read_total));
+                nb_read_total += nb_read;
+                buf += nb_read;
+            }
+            SDL_RWclose(rw);
+        }
+
+        return buffer;
     }
 
     virtual VkSurfaceKHR createSurface(VkInstance instance) override
@@ -66,17 +84,17 @@ public:
 
     virtual void info(const std::string& message) override
     {
-//        LOGI("%s", message.c_str());
+        LOGI("%s", message.c_str());
     }
 
     virtual void error(const std::string& message) override
     {
-//        LOGE("%s", message.c_str());
+        LOGE("%s", message.c_str());
     }
 
     virtual void warning(const std::string& message) override
     {
-//        LOGW("%s", message.c_str());
+        LOGW("%s", message.c_str());
     }
 
     void initIMGUIPlatformBackend() override
