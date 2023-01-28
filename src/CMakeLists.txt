@@ -74,4 +74,18 @@ endif()
 if(VKBASE_SHADER_RUNTIME_COMPILE)
 	target_compile_definitions(vkbase_e PUBLIC VKBASE_SHADER_RUNTIME_COMPILE=1)
 endif()
+##################
+## ENGINE ASSETS #
+##################
 
+add_custom_command(OUTPUT assets.cpp
+		COMMAND ${CMAKE_COMMAND}
+		"-DASSETS=${ASSETS}"
+		-DDST_FILE=${CMAKE_CURRENT_BINARY_DIR}/assets.cpp
+		-DVAR_NAME=__engine_assets_var__
+		-P ${CMAKE_CURRENT_SOURCE_DIR}/../CMake/create_assets.cmake
+		COMMENT "creating assets.cpp"
+		WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+		DEPENDS ${ASSETS}
+		)
+target_sources(vkbase_e PRIVATE assets.cpp)

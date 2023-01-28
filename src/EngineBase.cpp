@@ -1,4 +1,3 @@
-
 #include <iostream>
 #include <stdexcept>//for runtime_error
 #include <functional>//for lambda
@@ -7,6 +6,7 @@
 #include <optional>//wraps object
 #include <set>
 #include <cstring>
+#include <map>
 
 #if VKBASE_SHADER_RUNTIME_COMPILE
     #include <shaderc/shaderc.hpp>
@@ -15,13 +15,14 @@
 
 #include "EngineBase.h"
 
+extern std::map<std::string, std::string > __engine_assets_var__;
 
 namespace vkbase
 {
-    void EngineBase::init(ISysRes& pSysRes)
+    EngineBase::EngineBase(ISysRes& pSysRes): sysRes(&pSysRes), assets{__engine_assets_var__}
     {
         #if VKBASE_SHADER_RUNTIME_COMPILE
-            std::cout << "Shader runtime compile enabled" << std::endl;
+        std::cout << "Shader runtime compile enabled" << std::endl;
         #endif
 
         this->sysRes=&pSysRes;
@@ -42,8 +43,9 @@ namespace vkbase
         createMainCommandBuffers();
         createRenderBuffers();
         initIMGUI();
-        setupLogic();
     }
+
+
 
 
     inline void EngineBase::createInstance()
@@ -192,12 +194,12 @@ namespace vkbase
     }
 
 
-    inline bool EngineBase::checkDeviceExtensionSupport(VkPhysicalDevice device)
+    inline bool EngineBase::checkDeviceExtensionSupport(VkPhysicalDevice dev)
     {
         uint32_t extensionCount;
-        vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
+        vkEnumerateDeviceExtensionProperties(dev, nullptr, &extensionCount, nullptr);
         std::vector<VkExtensionProperties> availableExtensions(extensionCount);
-        vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
+        vkEnumerateDeviceExtensionProperties(dev, nullptr, &extensionCount, availableExtensions.data());
 
         for (const char *requiredExtension: deviceExtensions)
         {
@@ -689,7 +691,7 @@ namespace vkbase
         vkResetCommandBuffer(cbMain[0], 0);
     }
 
-    void EngineBase::rewriteMainBuffer(int imageIndex)
+    void EngineBase::rewriteMainBuffer(uint32_t imageIndex)
     {
         VkCommandBuffer& cb = cbMain[imageIndex];
 
@@ -785,7 +787,7 @@ namespace vkbase
         //describe subpass (only one now)
         VkSubpassDescription subpass{};
         //what type of pipeline supported by this subpass
-        //VK_PIPELINE_BIND_POINT_COMPUTE specifies binding as a compute pipeline.
+        //VK_PIPELINE_BIND_POINT_COMPUTE specifies binding as compute pipeline.
         //VK_PIPELINE_BIND_POINT_GRAPHICS specifies binding as a graphics pipeline.
         //VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR specifies binding as a ray tracing pipeline.
         //VK_PIPELINE_BIND_POINT_SUBPASS_SHADING_HUAWEI specifies binding as a subpass shading pipeline.
@@ -1003,47 +1005,6 @@ namespace vkbase
 
 
 
-    void EngineBase::cleanup()
-    {
-        //wait for all queues on device to finish(cause errors otherwise)
-        vkDeviceWaitIdle(device);
-
-#if DEPTH_BUFFER
-        for (int i = 0; i < imageCount; ++i)
-            depthImages[i].destroy();
-#endif
-
-        cleanupIMGUI();
-
-
-        cleanupSwapChain();
-
-        vkDestroyRenderPass(device, renderPass, nullptr);
-
-
-        for (int i = 0; i < imageCount; ++i)
-        {
-            vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
-            vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
-            vkDestroyFence(device, fenceRenderFinished[i], nullptr);
-        }
-
-
-        vkDestroyCommandPool(device, commandPool, nullptr);
-        vkDestroyCommandPool(device, commandPoolReset, nullptr);
-
-
-        vkDestroyDevice(device, nullptr);
-
-        if (enableValidationLayers)
-        {
-            DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
-        }
-
-        vkDestroySurfaceKHR(instance, surface, nullptr);
-        vkDestroyInstance(instance, nullptr);
-    }
-
     //DEBUG
     inline VKAPI_ATTR VkBool32 VKAPI_CALL
     EngineBase::debugCallback(
@@ -1174,7 +1135,8 @@ namespace vkbase
 
     [[maybe_unused]] VkShaderModule EngineBase::loadPrecompiledShader(const std::string &filename)
     {
-        std::vector<char> code=sysRes->load_file((filename+".spv").c_str());
+        auto code_str = assets[filename+".spv"];
+        std::vector<char> code(code_str.begin(), code_str.end());
         if (code.empty())
             throw std::runtime_error("failed to load precompiled shader file: "+filename+"spv");
         return createShaderModule(code);
@@ -1319,7 +1281,8 @@ namespace vkbase
     std::string EngineBase::getDeviceName(VkPhysicalDevice device) {
         VkPhysicalDeviceProperties properties;
         vkGetPhysicalDeviceProperties(device, &properties);
-        return properties.deviceName;
+        std::string vendorName;
+        return properties.deviceName+std::string(" (")+std::to_string(properties.deviceID)+std::string(")")+std::string(" (")+std::to_string(properties.vendorID)+std::string(")");
     }
 
     void EngineBase::initIMGUI()
@@ -1480,7 +1443,7 @@ namespace vkbase
         }
     }
 
-    void EngineBase::rewriteIMGUICommandBuffer(int imageIndex)
+    void EngineBase::rewriteIMGUICommandBuffer(uint32_t imageIndex)
     {
         VkCommandBuffer cb = cbIMGUI[imageIndex];
 
@@ -1543,6 +1506,45 @@ namespace vkbase
             ImGui::ShowDemoWindow(&show_demo_window);
     }
 
+    EngineBase::~EngineBase()
+    {
+        //wait for all queues on device to finish(cause errors otherwise)
+        vkDeviceWaitIdle(device);
+
+        #if DEPTH_BUFFER
+        for (int i = 0; i < imageCount; ++i)
+            depthImages[i].destroy();
+        #endif
+
+        cleanupIMGUI();
+
+        cleanupSwapChain();
+
+        vkDestroyRenderPass(device, renderPass, nullptr);
+
+
+        for (int i = 0; i < imageCount; ++i)
+        {
+            vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
+            vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
+            vkDestroyFence(device, fenceRenderFinished[i], nullptr);
+        }
+
+
+        vkDestroyCommandPool(device, commandPool, nullptr);
+        vkDestroyCommandPool(device, commandPoolReset, nullptr);
+
+
+        vkDestroyDevice(device, nullptr);
+
+        if (enableValidationLayers)
+        {
+            DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
+        }
+
+        vkDestroySurfaceKHR(instance, surface, nullptr);
+        vkDestroyInstance(instance, nullptr);
+    }
 
 }
 
