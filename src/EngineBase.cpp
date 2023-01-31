@@ -7,6 +7,7 @@
 #include <set>
 #include <cstring>
 #include <map>
+#include <imgui_internal.h>
 
 #if VKBASE_SHADER_RUNTIME_COMPILE
     #include <shaderc/shaderc.hpp>
@@ -26,6 +27,7 @@ namespace vkbase
         #endif
 
         this->sysRes=&pSysRes;
+        sysRes->engEvents=&engEvents;
         createInstance();
         setupDebugMessenger();
         surface= this->sysRes->createSurface(instance);
@@ -444,6 +446,8 @@ namespace vkbase
         //save swap chain details
         swapChainImageFormat = surfaceFormat.format;
         swapChainExtent = extent;
+        surfaceSize = {extent.width, extent.height};
+        surfaceCenter = {extent.width/2.f, extent.height/2.f};
 
         sysRes->info("image count: "+std::to_string(imageCount));
     }
@@ -880,11 +884,12 @@ namespace vkbase
 
     void EngineBase::drawFrame()
     {
-        //virtual void for additional preparation in inherited classes
-        drawPrepare();
-
         VkResult result;
 
+
+        //virtual void for additional preparation in inherited classes
+        drawPrepare();
+        processTouches();
         //render ui before acquire next image(it will be executed anyway and acquiring image can make thread wait)
         renderIMGUI();
 
@@ -899,8 +904,6 @@ namespace vkbase
                                        imageAvailableSemaphores[currentFrame],//semaphore
                                        VK_NULL_HANDLE,//fence
                                        &imageIndex);//out image index
-
-        sysRes->info("imageIndex = " + std::to_string(imageIndex));
 
         //VK_SUCCESS is returned if an image became available.
         //VK_SUBOPTIMAL_KHR is returned if an image became available, and the swapchain no longer matches the surface properties exactly, but can still be used to present to the surface successfully./VK_SUBOPTIMAL_KHR is returned if an image became available, and the swapchain no longer matches the surface properties exactly, but can still be used to present to the surface successfully.
@@ -1302,8 +1305,10 @@ namespace vkbase
         //ImGui::StyleColorsDark();
         ImGui::StyleColorsClassic();
 
-        //set dpi scaling
-        ImGui::GetStyle().ScaleAllSizes(2.0f);
+        //set font scale and ui according to screen density
+        float dpi=sysRes->getDPI();
+        ImGui::GetIO().FontGlobalScale = dpi / 96.0f;
+        ImGui::GetStyle().ScaleAllSizes(dpi / 96.0f);
 
         // When viewports are enabled we tweak WindowRounding/WindowBg so platform windows can look identical to regular ones.
         ImGuiStyle& style = ImGui::GetStyle();
@@ -1430,6 +1435,9 @@ namespace vkbase
 
     void EngineBase::renderIMGUI()
     {
+        ImGuiIO* io = &ImGui::GetIO();
+        if(io->WantTextInput)
+            sysRes->captureKeyboard();
         //Finish writing IMGUI commands and start rendering
         ImGui::Render();
         //get data for rendering
@@ -1544,6 +1552,139 @@ namespace vkbase
 
         vkDestroySurfaceKHR(instance, surface, nullptr);
         vkDestroyInstance(instance, nullptr);
+    }
+
+    void EngineBase::processTouches()
+    {
+        ImGuiIO& io = ImGui::GetIO();
+        while (!engEvents.touchEvents.empty())
+        {
+            TouchEvent event= engEvents.touchEvents.front();
+            engEvents.touchEvents.pop();
+
+
+            switch (event.action)
+            {
+                case TouchEvent::MOVE:
+                {
+                    if(touchData.imguiFinger==event.index)
+                    {
+
+                        io.AddMousePosEvent(event.pos.x, event.pos.y);
+                        glm::vec2 dxy= event.pos - touchData.imguiFingerState.pos;
+                        sysRes->info("move-imgui"+std::to_string(dxy.x)+","+std::to_string(dxy.y));
+                        //scroll
+                        //get window that got mouse input
+//                        ImGuiWindow* window = ImGui::GetCurrentWindowRead();
+//                        if (window)
+//                        {
+//                            window->Scroll.x += dxy.x;
+//                            window->Scroll.y += dxy.y;
+//                        }
+
+
+                        touchData.imguiFingerState.down= true;
+                        touchData.imguiFingerState.pos= event.pos;
+                        touchData.imguiFingerState.time= event.time;
+                    }
+                    else
+                    {
+                        sysRes->info("move-app");
+                        handleTouch(event);
+
+                        touchData.fingerState[event.index].pos= event.pos;
+                        touchData.fingerState[event.index].down=true;
+                        touchData.fingerState[event.index].time=event.time;
+                    }
+
+                    continue;
+                }
+
+                case TouchEvent::DOWN:
+                {
+                    //get imgui windows
+                    ImVector<ImGuiWindow*>& windows = ImGui::GetCurrentContext()->Windows;
+                    //check if touch is in imgui area
+                    bool isTouchInImguiArea = false;
+
+                    for (ImGuiWindow* window : windows)
+                    {
+                        //check if window is visible and active
+                        if (window->Active && window->WasActive)
+                        {
+                            //check if touch is in window area
+                            if (event.pos.x >= window->Pos.x && event.pos.x <= window->Pos.x + window->Size.x &&
+                                event.pos.y >= window->Pos.y && event.pos.y <= window->Pos.y + window->Size.y)
+                            {
+                                isTouchInImguiArea = true;
+                                sysRes->info("Window:"+std::string(window->Name));
+                                break;
+                            }
+                        }
+                    }
+
+                    if(isTouchInImguiArea && touchData.imguiFinger==-1)
+                    {
+                        touchData.imguiFinger=event.index;
+                        touchData.imguiFingerState.pos= event.pos;
+                        touchData.imguiFingerState.down= true;
+                        touchData.imguiFingerState.time= event.time;
+                        touchData.imguiFingerState.downTime= event.time;
+                        touchData.imguiFingerState.downPos= event.pos;
+
+                        io.AddMousePosEvent(event.pos.x, event.pos.y);
+                        io.AddMouseButtonEvent(0, true);
+                        io.ConfigWindowsMoveFromTitleBarOnly= true;
+                        sysRes->info("down-imgui");
+                    }
+                    else
+                    {
+                        sysRes->info("down-app");
+                        handleTouch(event);
+
+                        touchData.fingerState[event.index].pos= event.pos;
+                        touchData.fingerState[event.index].down= true;
+                        touchData.fingerState[event.index].time= event.time;
+                        touchData.fingerState[event.index].downTime= event.time;
+                        touchData.fingerState[event.index].downPos= event.pos;
+                    }
+
+                    continue;
+                }
+
+                case TouchEvent::UP:
+                {
+                    if(touchData.imguiFinger==event.index)
+                    {
+                        io.AddMousePosEvent(event.pos.x, event.pos.y);
+                        io.AddMouseButtonEvent(0, false);
+                        io.ConfigWindowsMoveFromTitleBarOnly= false;
+                        touchData.imguiFinger=-1;
+                        touchData.fingerState[event.index].pos= event.pos;
+                        touchData.fingerState[event.index].down= false;
+                        touchData.fingerState[event.index].time=event.time;
+                        sysRes->info("up-imgui");
+                    }
+                    else
+                    {
+                        handleTouch(event);
+
+                        touchData.fingerState[event.index].pos= event.pos;
+                        touchData.fingerState[event.index].down= false;
+                        touchData.fingerState[event.index].time= event.time;
+                        sysRes->info("up-app");
+                    }
+
+                    continue;
+                }
+            }
+
+
+
+
+
+      }
+
     }
 
 }

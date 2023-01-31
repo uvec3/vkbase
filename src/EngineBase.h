@@ -11,10 +11,12 @@
 
 #include "../include/VKBASE/ISysRes.h"
 #include "Image.h"
+#include "glm/vec2.hpp"
 
 
 namespace vkbase
 {
+
     class EngineBase
     {
     //PUBLIC INTERFACE
@@ -27,6 +29,10 @@ namespace vkbase
         void drawFrame();
         //show ui window with info about engine state
         void showDebugWindow();
+
+
+        glm::vec2 surfaceSize;
+        glm::vec2 surfaceCenter;
 
     //FRIENDS
     public:
@@ -62,6 +68,36 @@ namespace vkbase
             std::vector<VkSurfaceFormatKHR> formats;
             // Available presentation modes
             std::vector<VkPresentModeKHR> presentModes;
+        };
+
+        struct FingerState
+        {
+            glm::vec2 pos;
+            bool down;
+            int64_t time;
+            int64_t downTime;
+            glm::vec2 downPos;
+        };
+
+        struct TouchData
+        {
+            std::array<FingerState,10> fingerState;
+            int imguiFinger=-1;
+            FingerState imguiFingerState;
+//            ImGui::Window=false;
+
+            int fingersCount() const
+            {
+                int count=0;
+                for(auto& f : fingerState)
+                {
+                    if(f.down)
+                        count++;
+                }
+                return count;
+            }
+
+
         };
 
     //CONSTANTS, SETTINGS
@@ -153,15 +189,21 @@ namespace vkbase
         std::vector<VkCommandBuffer> cbIMGUI;
         ImGuiIO* imguiIO;
         ImDrawData* imguiDrawData= nullptr;
+        //TOUCHES
+        EngEvents engEvents;
+        TouchData touchData;
 
 
-    //INTERNAL METHODS
+    //VIRTUAL METHODS
     protected:
         //called before submit command buffer
-        virtual void drawPrepare() = 0;
+        virtual void drawPrepare() {};
+        //
+        virtual void handleTouch(TouchEvent& touchEvent) {};
+    //INTERNAL METHODS
+    protected:
         //describe the render pass
         void createRenderPass();
-
         //SETUP VULKAN DEVICES
         //create instance
         void createInstance();
@@ -236,6 +278,9 @@ namespace vkbase
         void createIMGUICommandBuffers();
         void renderIMGUI();
         void rewriteIMGUICommandBuffer(uint32_t imageIndex);
+
+        //TOUCHES
+        void processTouches();
 
     //ADDITIONAL METHODS FOR INHERITANCE CLASSES
     protected:

@@ -15,14 +15,19 @@
     ((void)__android_log_print(ANDROID_LOG_WARN, "threaded_app", __VA_ARGS__))
 
 
-class AndroidSDLSysRes: public ISysRes
+class SysResSDL: public ISysRes
 {
 private:
     SDL_Window* window;
+    int w, h;
+
+
 public:
-    AndroidSDLSysRes(SDL_Window* window)
+    SysResSDL(SDL_Window* window)
     {
         this->window = window;
+        //disable SDL mouse simulation with touch events
+        SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
     }
 
 
@@ -70,16 +75,21 @@ public:
 
     virtual int getWidth() override
     {
-        int w;
         SDL_GetWindowSize(window, &w, nullptr);
         return w;
     }
 
     virtual int getHeight() override
     {
-        int h;
         SDL_GetWindowSize(window, nullptr, &h);
         return h;
+    }
+
+    virtual float getDPI() override
+    {
+        float dpi = 1.0f;
+        SDL_GetDisplayDPI(0, &dpi, nullptr, nullptr);
+        return dpi;
     }
 
     virtual void info(const std::string& message) override
@@ -110,6 +120,51 @@ public:
     void newFrameIMGUIPlatformBackend() override
     {
         ImGui_ImplSDL2_NewFrame(window);
+    }
+
+    void handleEvent(SDL_Event& event)
+    {
+
+        ImGuiIO& io = ImGui::GetIO();
+        
+        switch (event.type)
+        {
+
+            //touch events
+            case SDL_FINGERDOWN:
+            {
+                engEvents->touchEvents.push({event.tfinger.fingerId, {event.tfinger.x*w, event.tfinger.y*h}, event.tfinger.timestamp, TouchEvent::DOWN});
+                return;
+            }
+
+            case SDL_FINGERUP:
+            {
+                engEvents->touchEvents.push({event.tfinger.fingerId, {event.tfinger.x*w, event.tfinger.y*h}, event.tfinger.timestamp, TouchEvent::UP});
+                return;
+            }
+
+            case SDL_FINGERMOTION:
+            {
+                engEvents->touchEvents.push({event.tfinger.fingerId, {event.tfinger.x*w, event.tfinger.y*h}, event.tfinger.timestamp, TouchEvent::MOVE});
+                return;
+            }
+        }
+
+
+
+        ImGui_ImplSDL2_ProcessEvent(&event);
+
+    }
+
+    void captureKeyboard() override
+    {
+        SDL_SetTextInputRect(nullptr);
+        SDL_StartTextInput();
+    }
+
+    uint64_t getMilliseconds() override
+    {
+        return SDL_GetTicks64();
     }
 
 };

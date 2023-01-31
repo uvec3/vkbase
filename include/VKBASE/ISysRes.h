@@ -2,6 +2,28 @@
 #include <vector>
 #include <string>
 #include <vulkan/vulkan.h>
+#include <queue>
+#include <glm/glm.hpp>
+
+struct TouchEvent
+{
+    enum Action
+    {
+        DOWN,
+        MOVE,
+        UP
+    };
+
+    int64_t index;
+    glm::vec2 pos;
+    uint64_t time;
+    Action action;
+};
+
+struct EngEvents
+{
+    std::queue<TouchEvent> touchEvents;
+};
 
 //system-dependent methods interface
 //necessary for creating engine
@@ -23,6 +45,8 @@ public:
 
     virtual int getHeight()=0;
 
+    virtual float getDPI()=0;
+
     virtual void info(const std::string& message)=0;
 
     virtual void error(const std::string& message)=0;
@@ -34,4 +58,10 @@ public:
     virtual void shutdownIMGUIPlatformBackend()=0;
 
     virtual void newFrameIMGUIPlatformBackend()=0;
+
+    virtual void captureKeyboard()=0;
+
+    virtual uint64_t getMilliseconds()=0;
+
+    EngEvents* engEvents=nullptr;
 };
