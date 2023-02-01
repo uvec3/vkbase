@@ -5,15 +5,26 @@
 #include <imgui.h>
 #include <imgui_impl_sdl.h>
 #include <SDL.h>
-#include <android/log.h>
 
-#define LOGI(...) \
-    ((void)__android_log_print(ANDROID_LOG_INFO, "threaded_app", __VA_ARGS__))
-#define LOGE(...) \
-    ((void)__android_log_print(ANDROID_LOG_ERROR, "threaded_app", __VA_ARGS__))
-#define LOGW(...) \
-    ((void)__android_log_print(ANDROID_LOG_WARN, "threaded_app", __VA_ARGS__))
+#if ANDROID
+    #include <android/log.h>
+    #define LOGI(...) \
+        ((void)__android_log_print(ANDROID_LOG_INFO, "threaded_app", __VA_ARGS__))
+    #define LOGE(...) \
+        ((void)__android_log_print(ANDROID_LOG_ERROR, "threaded_app", __VA_ARGS__))
+    #define LOGW(...) \
+        ((void)__android_log_print(ANDROID_LOG_WARN, "threaded_app", __VA_ARGS__))
+#else
+    #include <stdio.h>
+#include <stdexcept>
 
+    #define LOGI(...) \
+        ((void)printf(__VA_ARGS__), printf("\n"))
+    #define LOGE(...)   \
+        ((void)fprintf(stderr, __VA_ARGS__), fprintf(stderr, "\n"))
+    #define LOGW(...)   \
+        ((void)fprintf(stderr, __VA_ARGS__), fprintf(stderr, "\n"))
+#endif
 
 class SysResSDL: public ISysRes
 {
@@ -34,7 +45,6 @@ public:
     virtual std::vector<char> load_file(const char* path) override
     {
         std::vector<char> buffer;
-
         SDL_RWops *rw = SDL_RWFromFile(path, "rb");
         if (rw != nullptr)
         {

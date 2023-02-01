@@ -22,6 +22,24 @@ endif()
 find_package(Vulkan REQUIRED)
 
 
+###################
+### CREATE LIBS ###
+###################
+add_library(imgui
+		../third_party/imgui/imgui.cpp
+		../third_party/imgui/imgui_draw.cpp
+		../third_party/imgui/imgui_demo.cpp
+		../third_party/imgui/imgui_tables.cpp
+		../third_party/imgui/imgui_widgets.cpp
+		../third_party/imgui/backends/imgui_impl_vulkan.cpp)
+target_include_directories(imgui
+		PUBLIC ../third_party/imgui
+		PUBLIC ../third_party/imgui/backends
+		INTERFACE ../include/VKBASE/platform-dependent
+		PUBLIC ${Vulkan_INCLUDE_DIRS})
+target_link_libraries(imgui PUBLIC ${Vulkan_LIBRARIES})
+
+
 ##############
 ### TARGET ###
 ##############
