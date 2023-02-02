@@ -143,12 +143,16 @@ public:
             //touch events
             case SDL_FINGERDOWN:
             {
+
+
                 engEvents->touchEvents.push({event.tfinger.fingerId, {event.tfinger.x*w, event.tfinger.y*h}, event.tfinger.timestamp, TouchEvent::DOWN});
                 return;
             }
 
             case SDL_FINGERUP:
             {
+                info("touch id: " + std::to_string(event.tfinger.fingerId));
+
                 engEvents->touchEvents.push({event.tfinger.fingerId, {event.tfinger.x*w, event.tfinger.y*h}, event.tfinger.timestamp, TouchEvent::UP});
                 return;
             }
