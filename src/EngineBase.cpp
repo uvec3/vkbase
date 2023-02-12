@@ -655,7 +655,6 @@ namespace vkbase
         //command buffers for each frame
         cbRender.resize(imageCount);
 
-
         VkCommandBufferAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         //command pool from which command buffers will be allocated
@@ -669,6 +668,23 @@ namespace vkbase
         //create command buffers
         if (vkAllocateCommandBuffers(device, &allocInfo, cbRender.data()) != VK_SUCCESS) {
             throw std::runtime_error("failed to allocate command buffers!");
+        }
+
+
+
+        for (size_t i = 0; i < cbRender.size(); i++)
+        {
+            //create empty command buffers
+            VkCommandBufferBeginInfo beginInfo{};
+            beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            beginInfo.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+            auto inheritanceInfo =createMainBufferInheritanceInfo(i);
+            beginInfo.pInheritanceInfo = &inheritanceInfo;
+
+            if (vkBeginCommandBuffer(cbRender[i], &beginInfo) != VK_SUCCESS)
+                throw std::runtime_error("failed to begin recording command buffer!");
+
+            vkEndCommandBuffer(cbRender[i]);
         }
 
     }
@@ -726,14 +742,34 @@ namespace vkbase
             renderPassInfo.renderArea.offset = {0, 0};
             renderPassInfo.renderArea.extent = swapChainExtent;
 
+            if(clearColor.a !=0.f)
+            {
+                renderPassInfo.clearValueCount=1;
+                VkClearColorValue pClearColor{};
+                pClearColor.float32[0]=clearColor.r;
+                pClearColor.float32[1]=clearColor.g;
+                pClearColor.float32[2]=clearColor.b;
+                pClearColor.float32[3]=clearColor.a;
+
+                //VkClearDepthStencilValue clearDepth{};
+                //clearDepth.depth = 1.0f;
+                //clearDepth.stencil = 0;
+
+                VkClearValue clearValue{};
+                clearValue.color=pClearColor;
+                renderPassInfo.pClearValues=&clearValue;
+            }
+            else
+            {
+                renderPassInfo.clearValueCount=0;
+                renderPassInfo.pClearValues=nullptr;
+            }
+
             //VK_SUBPASS_CONTENTS_INLINE: Render pass commands will be inlined in the primary command buffer itself, and no secondary command buffers will be executed.
             //VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS: Render pass commands will be executed from secondary command buffers.
             vkCmdBeginRenderPass(cb, &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
             {
-                //call secondary command buffer for rendering
-                vkCmdExecuteCommands(cb, 1, &cbRender[imageIndex]);
-                //call secondary command buffer for ui
-                vkCmdExecuteCommands(cb, 1, &cbIMGUI[imageIndex]);
+                callRenderBuffers(imageIndex, cb);
             }
 
             vkCmdEndRenderPass(cb);
@@ -760,7 +796,10 @@ namespace vkbase
         //color attachment samples (VK_SAMPLE_COUNT_1_BIT: no multisampling)
         colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
         //determine what to do with the data(color and depth) in the attachment before rendering
-        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        if(clearColor.a==0.0f)
+            colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        else
+            colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         //determine what to do with the data(color and depth) in the attachment after rendering
         colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 
@@ -1144,8 +1183,6 @@ namespace vkbase
             throw std::runtime_error("failed to load precompiled shader file: "+filename+"spv");
         return createShaderModule(code);
 
-    }
-
 
 #if VKBASE_SHADER_RUNTIME_COMPILE
     VkShaderModule EngineBase::loadSourceShader(const std::string &filename, bool save)
@@ -1435,6 +1472,14 @@ namespace vkbase
 
     void EngineBase::renderIMGUI()
     {
+        const ImGuiViewport* viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(viewport->WorkPos);
+        ImGui::SetNextWindowSize(viewport->WorkSize);
+        ImGui::SetNextWindowBgAlpha(0.0f); // Transparent background
+        ImGui::Begin("__background_window__", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings| ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNav| ImGuiWindowFlags_NoBackground);
+        ImGui::End();
+
+
         ImGuiIO* io = &ImGui::GetIO();
         if(io->WantTextInput)
             sysRes->captureKeyboard();
@@ -1693,6 +1738,29 @@ namespace vkbase
                 }
             }
       }
+    }
+
+    VkCommandBufferInheritanceInfo EngineBase::createMainBufferInheritanceInfo(int imageIndex)
+    {
+        //command buffer will be submitted as secondary buffer, so we need to specify inheritance info
+        VkCommandBufferInheritanceInfo inheritanceInfo{};
+        inheritanceInfo.sType= VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+        inheritanceInfo.renderPass = renderPass;
+        inheritanceInfo.subpass = 0;
+        inheritanceInfo.framebuffer = swapChainFramebuffers[imageIndex];
+        inheritanceInfo.occlusionQueryEnable = VK_FALSE;
+        inheritanceInfo.queryFlags = 0;
+        inheritanceInfo.pipelineStatistics = 0;
+
+        return inheritanceInfo;
+    }
+
+    void EngineBase::callRenderBuffers(int imageIndex, VkCommandBuffer cb)
+    {
+        //call secondary command buffer for rendering
+        //vkCmdExecuteCommands(cb, 1, &cbRender[imageIndex]);
+        //call secondary command buffer for ui
+        vkCmdExecuteCommands(cb, 1, &cbIMGUI[imageIndex]);
     }
 }
 

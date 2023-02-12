@@ -114,6 +114,20 @@ public:
         ImGui_ImplGlfw_NewFrame();
     }
 
+    float getDPI() override
+    {
+        return 140;
+    }
+
+    void captureKeyboard() override
+    {
+
+    }
+
+    uint64_t getMilliseconds() override
+    {
+        return glfwGetTime()*1000;
+    }
 
 };
 

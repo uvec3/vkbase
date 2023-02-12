@@ -107,13 +107,14 @@ namespace vkbase
         std::map<std::string, std::string>& assets;
 
         //the desired number of frames to be processed simultaneously (corrected when creating a swapchain with restrictions)
-        uint32_t imageCount = 2;
+        uint32_t imageCount = 2;//{dep swapchain}
+
+        glm::vec4 clearColor = {0.0f, 0.0f, 0.0f, 1.0f};//{dep render pass}
 
         //required extensions for device
         const std::vector<const char *> deviceExtensions{
             VK_KHR_SWAPCHAIN_EXTENSION_NAME
         };
-
         //required features for device
         const VkPhysicalDeviceFeatures deviceFeatures{};
 
@@ -249,6 +250,8 @@ namespace vkbase
         void createRenderBuffers();
         void createMainCommandBuffers();
         void rewriteMainBuffer(uint32_t imageIndex);
+        VkCommandBufferInheritanceInfo createMainBufferInheritanceInfo(int imageIndex);
+        void callRenderBuffers(int imageIndex, VkCommandBuffer cb);
 
         //SYNC OBJECTS
         void createSyncObjects();

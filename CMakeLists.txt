@@ -21,15 +21,17 @@ add_subdirectory(src)
 
 
 
-#System backend for android game activity
+#System backend for GLFW desktop
 add_library(glfwSysRes third_party/imgui/backends/imgui_impl_glfw.cpp)
 target_include_directories(glfwSysRes
 		PUBLIC third_party/imgui
 		PUBLIC third_party/imgui/backends
 		INTERFACE include/VKBASE/platform-dependent)
+target_link_libraries(glfwSysRes PUBLIC glfw)
 
 
-#System backend for GLFW desktop
+
+#System backend for android game activity
 add_library(androidSysRes third_party/imgui/backends/imgui_impl_android.cpp)
 target_include_directories(androidSysRes
 		PUBLIC third_party/imgui
@@ -38,6 +40,7 @@ target_include_directories(androidSysRes
 
 
 
-#System backend for SDL android
+
+#System backend for SDL
 add_library(SDLSysRes third_party/imgui/backends/imgui_impl_sdl.cpp)
 target_link_libraries(SDLSysRes SDL2  imgui)
