@@ -159,7 +159,7 @@ namespace vkbase
         //output image format
         VkFormat swapChainImageFormat;
         //output image extent
-        VkExtent2D swapChainExtent;
+        VkExtent2D extent;
         //Render pass
         VkRenderPass renderPass{VK_NULL_HANDLE};
         //command pool
