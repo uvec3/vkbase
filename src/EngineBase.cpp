@@ -925,9 +925,14 @@ namespace vkbase
 
     void EngineBase::drawFrame()
     {
-        extent=chooseSwapExtent(querySwapChainDetails(physicalDevice).capabilities);
-        if(extent.width==0 || extent.height==0)
+        auto newExtent=chooseSwapExtent(querySwapChainDetails(physicalDevice).capabilities);
+        if(newExtent.width==0 || newExtent.height==0)
             return;
+        else if(newExtent.width!=extent.width || newExtent.height!=extent.height)
+        {
+            recreateSwapChain();
+            return;
+        }
 
         VkResult result;
 
@@ -1182,12 +1187,12 @@ namespace vkbase
 
     [[maybe_unused]] VkShaderModule EngineBase::loadPrecompiledShader(const std::string &filename)
     {
-        auto code_str = assets[filename+".spv"];
+        auto code_str = assets[filename + ".spv"];
         std::vector<char> code(code_str.begin(), code_str.end());
         if (code.empty())
-            throw std::runtime_error("failed to load precompiled shader file: "+filename+"spv");
+            throw std::runtime_error("failed to load precompiled shader file: " + filename + "spv");
         return createShaderModule(code);
-
+    }
 
 #if VKBASE_SHADER_RUNTIME_COMPILE
     VkShaderModule EngineBase::loadSourceShader(const std::string &filename, bool save)
@@ -1477,12 +1482,12 @@ namespace vkbase
 
     void EngineBase::renderIMGUI()
     {
-        const ImGuiViewport* viewport = ImGui::GetMainViewport();
-        ImGui::SetNextWindowPos(viewport->WorkPos);
-        ImGui::SetNextWindowSize(viewport->WorkSize);
-        ImGui::SetNextWindowBgAlpha(0.0f); // Transparent background
-        ImGui::Begin("__background_window__", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings| ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNav| ImGuiWindowFlags_NoBackground);
-        ImGui::End();
+        //const ImGuiViewport* viewport = ImGui::GetMainViewport();
+        //ImGui::SetNextWindowPos(viewport->WorkPos);
+        //ImGui::SetNextWindowSize(viewport->WorkSize);
+        //ImGui::SetNextWindowBgAlpha(0.0f); // Transparent background
+        //ImGui::Begin("__background_window__", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings| ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNav| ImGuiWindowFlags_NoBackground| ImGuiWindowFlags_NoInputs);
+        //ImGui::End();
 
 
         ImGuiIO* io = &ImGui::GetIO();
@@ -1763,7 +1768,7 @@ namespace vkbase
     void EngineBase::callRenderBuffers(int imageIndex, VkCommandBuffer cb)
     {
         //call secondary command buffer for rendering
-        //vkCmdExecuteCommands(cb, 1, &cbRender[imageIndex]);
+        vkCmdExecuteCommands(cb, 1, &cbRender[imageIndex]);
         //call secondary command buffer for ui
         vkCmdExecuteCommands(cb, 1, &cbIMGUI[imageIndex]);
     }
