@@ -73,10 +73,11 @@ namespace vkbase
         struct FingerState
         {
             glm::vec2 pos;
-            bool down;
+            bool down= false;
             int64_t time;
             int64_t downTime;
             glm::vec2 downPos;
+            int64_t internalID;
         };
 
         struct TouchData

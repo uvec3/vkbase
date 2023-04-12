@@ -1577,7 +1577,6 @@ namespace vkbase
 
                         io.AddMousePosEvent(event.pos.x, event.pos.y);
                         glm::vec2 dxy= event.pos - touchData.imguiFingerState.pos;
-                        sysRes->info("move-imgui"+std::to_string(dxy.x)+","+std::to_string(dxy.y));
                         //scroll
                         //get window that got mouse input
 //                        ImGuiWindow* window = ImGui::GetCurrentWindowRead();
@@ -1588,18 +1587,22 @@ namespace vkbase
 //                        }
 
 
-                        touchData.imguiFingerState.down= true;
                         touchData.imguiFingerState.pos= event.pos;
                         touchData.imguiFingerState.time= event.time;
                     }
                     else
                     {
-                        sysRes->info("move-app");
-                        handleTouch(event);
+                        for(int id=0; id<touchData.fingerState.size(); ++id)
+                            if(touchData.fingerState[id].down && touchData.fingerState[id].internalID == event.index)
+                            {
+                                event.index= id;
+                                handleTouch(event);
 
-                        touchData.fingerState[event.index].pos= event.pos;
-                        touchData.fingerState[event.index].down=true;
-                        touchData.fingerState[event.index].time=event.time;
+                                touchData.fingerState[id].pos = event.pos;
+                                touchData.fingerState[id].time = event.time;
+
+                                break;
+                            }
                     }
 
                     continue;
@@ -1622,7 +1625,6 @@ namespace vkbase
                                 event.pos.y >= window->Pos.y && event.pos.y <= window->Pos.y + window->Size.y)
                             {
                                 isTouchInImguiArea = true;
-                                sysRes->info("Window:"+std::string(window->Name));
                                 break;
                             }
                         }
@@ -1640,18 +1642,27 @@ namespace vkbase
                         io.AddMousePosEvent(event.pos.x, event.pos.y);
                         io.AddMouseButtonEvent(0, true);
                         io.ConfigWindowsMoveFromTitleBarOnly= true;
-                        sysRes->info("down-imgui");
                     }
                     else
                     {
-                        sysRes->info("down-app");
-                        handleTouch(event);
+                        for(int id=0; id<touchData.fingerState.size(); id++)
+                            if(!touchData.fingerState[id].down)
+                            {
 
-                        touchData.fingerState[event.index].pos= event.pos;
-                        touchData.fingerState[event.index].down= true;
-                        touchData.fingerState[event.index].time= event.time;
-                        touchData.fingerState[event.index].downTime= event.time;
-                        touchData.fingerState[event.index].downPos= event.pos;
+                                touchData.fingerState[id].pos= event.pos;
+                                touchData.fingerState[id].down= true;
+                                touchData.fingerState[id].time= event.time;
+                                touchData.fingerState[id].downTime= event.time;
+                                touchData.fingerState[id].downPos= event.pos;
+                                touchData.fingerState[id].internalID = event.index;
+
+                                //remap touch id
+                                event.index=id;
+                                handleTouch(event);
+
+
+                                break;
+                            }
                     }
 
                     continue;
@@ -1665,32 +1676,28 @@ namespace vkbase
                         io.AddMouseButtonEvent(0, false);
                         io.ConfigWindowsMoveFromTitleBarOnly= false;
                         touchData.imguiFinger=-1;
-                        touchData.fingerState[event.index].pos= event.pos;
-                        touchData.fingerState[event.index].down= false;
-                        touchData.fingerState[event.index].time=event.time;
-                        sysRes->info("up-imgui");
                     }
                     else
                     {
-                        handleTouch(event);
+                        for(int id=0; id<touchData.fingerState.size(); ++id)
+                            if(touchData.fingerState[id].down && touchData.fingerState[id].internalID == event.index)
+                            {
+                                event.index = id;
 
-                        touchData.fingerState[event.index].pos= event.pos;
-                        touchData.fingerState[event.index].down= false;
-                        touchData.fingerState[event.index].time= event.time;
-                        sysRes->info("up-app");
+
+                                handleTouch(event);
+
+                                touchData.fingerState[event.index].pos = event.pos;
+                                touchData.fingerState[event.index].down = false;
+                                touchData.fingerState[event.index].time = event.time;
+                                break;
+                            }
                     }
 
                     continue;
                 }
             }
-
-
-
-
-
       }
-
     }
-
 }
 
