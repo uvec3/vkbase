@@ -321,8 +321,8 @@ namespace vkbase
     //SETUP SWAP CHAIN
     void EngineBase::recreateSwapChain()
     {
-        //frame buffer can not be zero
-        if (sysRes->getWidth() == 0 || sysRes->getHeight() == 0)
+
+        if(extent.width==0 || extent.height==0)
             return;
 
         //wait present queue
@@ -333,7 +333,6 @@ namespace vkbase
 
         //create again
         createSwapChain();
-
 
         createImageViews();
 
@@ -346,19 +345,22 @@ namespace vkbase
 
     inline void EngineBase::cleanupSwapChain()
     {
-        //delete framebuffers
-        for (auto framebuffer: swapChainFramebuffers)
+        if(swapChain!=VK_NULL_HANDLE)
         {
-            vkDestroyFramebuffer(device, framebuffer, nullptr);
-        }
+            //delete framebuffers
+            for (auto framebuffer: swapChainFramebuffers)
+            {
+                vkDestroyFramebuffer(device, framebuffer, nullptr);
+            }
 
-        //delete image views
-        for (auto imageView: swapChainImageViews)
-        {
-            vkDestroyImageView(device, imageView, nullptr);
+            //delete image views
+            for (auto imageView: swapChainImageViews)
+            {
+                vkDestroyImageView(device, imageView, nullptr);
+            }
+            //delete swap chain
+            vkDestroySwapchainKHR(device, swapChain, nullptr);
         }
-        //delete swap chain
-        vkDestroySwapchainKHR(device, swapChain, nullptr);
     }
 
 
@@ -372,7 +374,8 @@ namespace vkbase
         VkPresentModeKHR presentMode = chooseSwapPresentMode(swapChainDetails.presentModes);
         sysRes->info("present mode: "+std::to_string(presentMode));
         //choose extent
-        VkExtent2D extent = chooseSwapExtent(swapChainDetails.capabilities);
+        extent = chooseSwapExtent(swapChainDetails.capabilities);
+
         //choose compositeAlpha
         VkCompositeAlphaFlagBitsKHR compositeAlpha=chooseSwapChainCompositeAlpha(swapChainDetails.capabilities.supportedCompositeAlpha);
 
@@ -445,7 +448,6 @@ namespace vkbase
 
         //save swap chain details
         swapChainImageFormat = surfaceFormat.format;
-        swapChainExtent = extent;
         surfaceSize = {extent.width, extent.height};
         surfaceCenter = {extent.width/2.f, extent.height/2.f};
 
@@ -600,8 +602,8 @@ namespace vkbase
             framebufferInfo.attachmentCount = sizeof(attachments) / sizeof(VkImageView);
             framebufferInfo.pAttachments = attachments;
             //extent
-            framebufferInfo.width = swapChainExtent.width;
-            framebufferInfo.height = swapChainExtent.height;
+            framebufferInfo.width = extent.width;
+            framebufferInfo.height = extent.height;
             //layers
             framebufferInfo.layers = 1;
 
@@ -740,7 +742,7 @@ namespace vkbase
             renderPassInfo.framebuffer = swapChainFramebuffers[imageIndex];
 
             renderPassInfo.renderArea.offset = {0, 0};
-            renderPassInfo.renderArea.extent = swapChainExtent;
+            renderPassInfo.renderArea.extent = extent;
 
             if(clearColor.a !=0.f)
             {
@@ -923,8 +925,11 @@ namespace vkbase
 
     void EngineBase::drawFrame()
     {
-        VkResult result;
+        extent=chooseSwapExtent(querySwapChainDetails(physicalDevice).capabilities);
+        if(extent.width==0 || extent.height==0)
+            return;
 
+        VkResult result;
 
         //virtual void for additional preparation in inherited classes
         drawPrepare();
@@ -1550,7 +1555,7 @@ namespace vkbase
         ImGui::Text("FPS: %.1f", io.Framerate);
         ImGui::Text("Frame time: %.3f ms", io.DeltaTime);
         ImGui::Text("GPU: %s", gpuName.c_str());
-        ImGui::Text("Resolution: %dx%d", swapChainExtent.width, swapChainExtent.height);
+        ImGui::Text("Resolution: %dx%d", extent.width, extent.height);
         ImGui::Text("Images count in swap chain: %d", imageCount);
         ImGui::End();
 
