@@ -13,6 +13,7 @@
     #include <shaderc/shaderc.hpp>
 #endif
 #include <backends/imgui_impl_vulkan.h>
+#include <chrono>
 
 #include "EngineBase.h"
 
@@ -1185,6 +1186,23 @@ namespace vkbase
         return shaderModule;
     }
 
+    VkShaderModule EngineBase::createShaderModule(const std::vector<uint32_t> &code)
+    {
+        VkShaderModuleCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        createInfo.codeSize = code.size()*4;
+        createInfo.pCode = code.data();
+
+        //creating module
+        VkShaderModule shaderModule;
+        if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS)
+        {
+            throw std::runtime_error("failed to create shader module!");
+        }
+        return shaderModule;
+    }
+
+
     [[maybe_unused]] VkShaderModule EngineBase::loadPrecompiledShader(const std::string &filename)
     {
         auto code_str = assets[filename + ".spv"];
@@ -1197,15 +1215,16 @@ namespace vkbase
 #if VKBASE_SHADER_RUNTIME_COMPILE
     VkShaderModule EngineBase::loadSourceShader(const std::string &filename, bool save)
     {
-        std::vector<char> code=sysRes->load_file((filename).c_str());
-        if (code.empty())
-            throw std::runtime_error("failed to load source shader file: "+filename);
-
-        std::vector<char> compiledCode=compileShader(code,filename);
-
-        //save compiled shader
-
-        return createShaderModule(compiledCode);
+        //std::vector<char> code=sysRes->load_file((filename).c_str());
+        //if (code.empty())
+        //    throw std::runtime_error("failed to load source shader file: "+filename);
+        //
+        //std::vector<char> compiledCode=compileShader(code,filename);
+        //
+        ////save compiled shader
+        //
+        //return createShaderModule(compiledCode);
+        return VK_NULL_HANDLE;
     }
 
     VkShaderModule EngineBase::loadShader(const std::string &filename)
@@ -1213,8 +1232,9 @@ namespace vkbase
         return VK_NULL_HANDLE;
     }
 
-    std::vector<char> EngineBase::compileShader(const std::vector<char>& source, const std::string &fileName)
+    std::vector<uint32_t> EngineBase::compileShader(const std::string &source, const std::string &fileName)
     {
+
         shaderc::Compiler compiler;
         shaderc::CompileOptions options;
 
@@ -1258,17 +1278,20 @@ namespace vkbase
 
         // Like -DMY_DEFINE=1
         //options.AddMacroDefinition( "MY_DEFINE", "1" );
-        options.SetOptimizationLevel( shaderc_optimization_level_size );
+
+        options.SetOptimizationLevel( shaderc_optimization_level_zero);
 
 
+        auto now = std::chrono::system_clock::now();
         shaderc::SpvCompilationResult module = compiler.CompileGlslToSpv( source.data() ,source.size(), kind, fileName.c_str(), options);
+        std::cout << "Compiling shader time: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - now).count() << "ms" << std::endl;
 
         if( module.GetCompilationStatus() != shaderc_compilation_status_success ) {
             throw std::runtime_error(module.GetErrorMessage());
         }
 
         //get compiled code as byte vector
-        return std::vector<char>{reinterpret_cast<const char*>( module.cbegin()), reinterpret_cast<const char*>( module.cend()) };
+        return std::vector<uint32_t>{module.cbegin(), module.cend() };
     }
 #endif
 

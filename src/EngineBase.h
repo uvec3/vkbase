@@ -288,12 +288,16 @@ namespace vkbase
 
     //ADDITIONAL METHODS FOR INHERITANCE CLASSES
     protected:
-        //create shader module from binary code
+        //create shader module from binary code(char array)
         [[maybe_unused]] VkShaderModule createShaderModule(const std::vector<char> &code);
+        //create shader module from binary code(uint32_t array)
+        [[maybe_unused]] VkShaderModule createShaderModule(const std::vector<uint32_t> &code);
         //read shader file using ISysRes interface
         [[maybe_unused]] VkShaderModule loadPrecompiledShader(const std::string& filename);
         #if VKBASE_SHADER_RUNTIME_COMPILE//use shaders compile library in engine
-            [[maybe_unused]] std::vector<char> compileShader(const std::vector<char>& source, const std::string &fileName);
+    public:
+            [[maybe_unused]] static std::vector<uint32_t> compileShader(const std::string& source, const std::string &fileName);
+    protected:
 
             //read source shader file using ISysRes interface and compile it
             [[maybe_unused]] VkShaderModule loadSourceShader(const std::string &filename, bool save= false);
