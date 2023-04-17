@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.16)
 project(vkbase)
 set(CMAKE_CXX_STANDARD 20)
 
-#include ability of shader compilation inside engine
-set(VKBASE_SHADER_RUNTIME_COMPILE OFF CACHE BOOL "Compile shaders at runtime extension for EngineBase")
+##include ability of shader compilation inside engine
+#set(VKBASE_SHADER_RUNTIME_COMPILE OFF  BOOL "Compile shaders at runtime extension for EngineBase")
 message(STATUS "VKBASE_SHADER_RUNTIME_COMPILE: ${VKBASE_SHADER_RUNTIME_COMPILE}")
 
 #if shader compilation is enabled, setup shaderc dependency
