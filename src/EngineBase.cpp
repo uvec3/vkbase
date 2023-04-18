@@ -926,6 +926,8 @@ namespace vkbase
 
     void EngineBase::drawFrame()
     {
+
+
         auto newExtent=chooseSwapExtent(querySwapChainDetails(physicalDevice).capabilities);
         if(newExtent.width==0 || newExtent.height==0)
             return;
@@ -935,16 +937,22 @@ namespace vkbase
             return;
         }
 
-        VkResult result;
 
+        VkResult result;
         //virtual void for additional preparation in inherited classes
+
         drawPrepare();
+
+
         processTouches();
+
         //render ui before acquire next image(it will be executed anyway and acquiring image can make thread wait)
         renderIMGUI();
 
+
         //current swap chain image index
         static uint32_t imageIndex;
+
 
         //timeout specifies how long the function waits, in nanoseconds, if no image is available
         //If timeout is zero, then vkAcquireNextImageKHR does not wait, and will either successfully acquire an image, or fail and return VK_NOT_READY if no image is available.
@@ -954,6 +962,9 @@ namespace vkbase
                                        imageAvailableSemaphores[currentFrame],//semaphore
                                        VK_NULL_HANDLE,//fence
                                        &imageIndex);//out image index
+
+
+                                       sysRes->info("vkAcquireNextImageKHR result:"+std::to_string(imageIndex));
 
         //VK_SUCCESS is returned if an image became available.
         //VK_SUBOPTIMAL_KHR is returned if an image became available, and the swapchain no longer matches the surface properties exactly, but can still be used to present to the surface successfully./VK_SUBOPTIMAL_KHR is returned if an image became available, and the swapchain no longer matches the surface properties exactly, but can still be used to present to the surface successfully.
@@ -1007,12 +1018,17 @@ namespace vkbase
         submitInfo.pSignalSemaphores = &renderFinishedSemaphores[imageIndex];
 
 
+
         //wait for fence to be signaled (previous render finished for this frame) (make cpu wait and don't draw more frames than is in swap chain)
         //called just before vkQueueSubmit so everything is ready for next frame drawing at this point
         vkWaitForFences(device, 1/*count*/, &fenceRenderFinished[imageIndex], VK_TRUE/*wait all in array*/,
                         UINT64_MAX);
         //reset fence (will not pass through vkWaitForFences until it is signaled again)
         vkResetFences(device, 1, &fenceRenderFinished[imageIndex]);
+
+
+        sync(imageIndex);
+
 
         rewriteIMGUICommandBuffer(imageIndex);
         rewriteMainBuffer(imageIndex);
@@ -1037,6 +1053,8 @@ namespace vkbase
         presentInfo.pImageIndices = &imageIndex;
         //result of presentation for each swap chain
         presentInfo.pResults = nullptr; // Optional
+
+        //vkDeviceWaitIdle(device);
 
         //present image to screen
         result = vkQueuePresentKHR(presentQueue, &presentInfo);
@@ -1505,6 +1523,7 @@ namespace vkbase
 
     void EngineBase::renderIMGUI()
     {
+
         //const ImGuiViewport* viewport = ImGui::GetMainViewport();
         //ImGui::SetNextWindowPos(viewport->WorkPos);
         //ImGui::SetNextWindowSize(viewport->WorkSize);
@@ -1517,7 +1536,9 @@ namespace vkbase
         if(io->WantTextInput)
             sysRes->captureKeyboard();
         //Finish writing IMGUI commands and start rendering
+
         ImGui::Render();
+
         //get data for rendering
         imguiDrawData = ImGui::GetDrawData();
 

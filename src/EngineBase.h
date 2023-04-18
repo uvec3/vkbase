@@ -107,7 +107,7 @@ namespace vkbase
         std::map<std::string, std::string>& assets;
 
         //the desired number of frames to be processed simultaneously (corrected when creating a swapchain with restrictions)
-        uint32_t imageCount = 2;//{dep swapchain}
+        uint32_t imageCount = 1;//{dep swapchain}
 
         glm::vec4 clearColor = {0.0f, 0.0f, 0.0f, 1.0f};//{dep render pass}
 
@@ -198,8 +198,13 @@ namespace vkbase
 
     //VIRTUAL METHODS
     protected:
-        //called before submit command buffer
+        //called in idle time between frames(it can be used for heavy computations)
         virtual void drawPrepare() {};
+
+        //this executes while current buffer is finish rendering and ready to start new frame
+        //the gpu data can be changed here(no hard computations(frame waits at this time))
+        virtual void sync(uint32_t imageIndex) {};
+
         //
         virtual void handleTouch(TouchEvent& touchEvent) {};
     //INTERNAL METHODS
