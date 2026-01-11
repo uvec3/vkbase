@@ -14,9 +14,6 @@ add_subdirectory(core)
 add_subdirectory(extensions/imgui)
 add_subdirectory(extensions/Buffer)
 add_subdirectory(extensions/ShadersRC)
-if (VKBASE_CPP_RUNTIME)
-    add_subdirectory(extensions/cppruntime)
-endif()
 #add_subdirectory(extensions/compute)
 
 
