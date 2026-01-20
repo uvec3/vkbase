@@ -2177,7 +2177,7 @@ namespace vkbase::imgui
         // Setup Dear ImGui style
         // ImGui::StyleColorsDark();
         ImGui::StyleColorsClassic();
-        // ImGui::StyleColorsLight();
+        //ImGui::StyleColorsLight();
 
 
         ImGuiStyle& style = ImGui::GetStyle();

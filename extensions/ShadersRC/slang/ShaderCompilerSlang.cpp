@@ -246,8 +246,8 @@ namespace vkbase::ShadersRC
             throw std::runtime_error(std::string(diagnostics_string));
         }
 
-        Slang::ComPtr<IEntryPoint> computeEntryPoint;
-        module->findAndCheckEntryPoint(entryPointName.c_str(), entryPointStage, computeEntryPoint.writeRef(),
+        Slang::ComPtr<IEntryPoint> entryPoint;
+        module->findAndCheckEntryPoint(entryPointName.c_str(), entryPointStage, entryPoint.writeRef(),
                                        diagnostics.writeRef());
         if (diagnostics)
             diagnostics_string += std::string(static_cast<const char*>(diagnostics->getBufferPointer()),
@@ -255,7 +255,7 @@ namespace vkbase::ShadersRC
 
 
         //Composition
-        IComponentType* components[] = {module, computeEntryPoint};
+        IComponentType* components[] = {module, entryPoint};
         Slang::ComPtr<IComponentType> program;
         auto result = session->createCompositeComponentType(components, 2, program.writeRef(), diagnostics.writeRef());
         if (diagnostics)
