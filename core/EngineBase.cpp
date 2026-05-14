@@ -12,9 +12,10 @@
 #include <cstring>
 #include <map>
 #include <chrono>
+#include <filesystem>
 #include <streambuf>
 
-
+#include "DEFINES.hpp"
 
 
 namespace vkbase
@@ -109,6 +110,8 @@ namespace vkbase
     VkPhysicalDeviceVulkan12Features deviceFeatures12{ };
     VkPhysicalDeviceVulkan13Features deviceFeatures13{.synchronization2 = VK_TRUE };
     VkPhysicalDeviceVulkan14Features deviceFeatures14{ };
+    std::vector<VkValidationFeatureEnableEXT> enabledValidationFeatures{VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT};
+    std::vector<VkValidationFeatureDisableEXT> disabledValidationFeatures;
 
     //ValidationLayers
     static constexpr std::array<const char *, 1> validationLayers = {
@@ -324,6 +327,15 @@ namespace vkbase
             //debug create info describe what kind of messages to send and to which callback
             VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo;
             populateDebugMessengerCreateInfo(debugCreateInfo);
+
+            VkValidationFeaturesEXT validation_features{};
+            validation_features.sType= VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT;
+            validation_features.enabledValidationFeatureCount=enabledValidationFeatures.size();
+            validation_features.pEnabledValidationFeatures=enabledValidationFeatures.data();
+            validation_features.disabledValidationFeatureCount=disabledValidationFeatures.size();
+            validation_features.pDisabledValidationFeatures = disabledValidationFeatures.data();
+            debugCreateInfo.pNext=&validation_features;
+
 
             //debug messenger goes to pNext of instance create info
             createInfo.pNext = (VkDebugUtilsMessengerCreateInfoEXT *) &debugCreateInfo;
@@ -1352,7 +1364,11 @@ namespace vkbase
     {
         createInfo = {};
         createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-        createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+        createInfo.messageSeverity =    VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+                                        VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                                        VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT|
+                                        VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT;
+
         createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
         createInfo.pfnUserCallback = debugCallback;
     }
@@ -1399,7 +1415,7 @@ namespace vkbase
         auto code_str = assets[filename + ".spv"];
         std::vector<char> code(code_str.begin(), code_str.end());
         if (code.empty())
-            throw std::runtime_error("failed to load precompiled shader file: " + filename + "spv");
+            throw std::runtime_error("failed to load precompiled shader file: " + filename + ".spv");
         return createShaderModule(code);
     }
 
