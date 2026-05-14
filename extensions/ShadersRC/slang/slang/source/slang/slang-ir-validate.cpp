@@ -6,6 +6,7 @@
 #include "slang-ir-insts.h"
 #include "slang-ir-util.h"
 #include "slang-ir.h"
+#include "slang-rich-diagnostics.h"
 
 namespace Slang
 {
@@ -59,7 +60,10 @@ void validate(IRValidateContext* context, bool condition, IRInst* inst, char con
     {
         if (context)
         {
-            context->getSink()->diagnose(inst, Diagnostics::irValidationFailed, message);
+            context->getSink()->diagnose(Diagnostics::IrValidationFailed{
+                .message = message,
+                .location = inst->sourceLoc,
+            });
         }
         else
         {
@@ -468,6 +472,16 @@ static bool isValidAtomicDest(bool skipFuncParamValidation, IRInst* dst)
         case AddressSpace::StorageBuffer:
         case AddressSpace::UserPointer:
             return true;
+        case AddressSpace::Uniform:
+            // SPIRV 1.3 represents SSBOs as Uniform storage class with BufferBlock decoration,
+            // rather than StorageBuffer storage class used in SPIRV 1.4+. Accept uniform pointers
+            // to BufferBlock-decorated structs as valid atomic targets.
+            if (auto structType = as<IRStructType>(ptrType->getValueType()))
+            {
+                if (structType->findDecorationImpl(kIROp_SPIRVBufferBlockDecoration))
+                    return true;
+            }
+            break;
         default:
             break;
         }
@@ -532,7 +546,9 @@ void validateAtomicOperations(bool skipFuncParamValidation, DiagnosticSink* sink
         {
             IRInst* destinationPtr = inst->getOperand(0);
             if (!isValidAtomicDest(skipFuncParamValidation, destinationPtr))
-                sink->diagnose(inst->sourceLoc, Diagnostics::invalidAtomicDestinationPointer);
+                sink->diagnose(Diagnostics::InvalidAtomicDestinationPointer{
+                    .location = inst->sourceLoc,
+                });
         }
         break;
 
@@ -551,17 +567,23 @@ static void validateVectorOrMatrixElementType(
     SourceLoc sourceLoc,
     IRType* elementType,
     uint32_t allowedWidths,
-    const DiagnosticInfo& disallowedElementTypeEncountered,
     TargetRequest* targetRequest)
 {
-    if (!isFloatingType(elementType))
+    auto emitDisallowedTypeError = [&]()
+    {
+        sink->diagnose(Diagnostics::VectorWithDisallowedElementTypeEncountered{
+            .type = elementType,
+            .location = sourceLoc});
+    };
+
+    if (!isFloatingType(elementType) && !isPackedFloatType(elementType))
     {
         if (isIntegralType(elementType))
         {
             IntInfo info = getIntTypeInfo(targetRequest, elementType);
             if (allowedWidths == 0U)
             {
-                sink->diagnose(sourceLoc, disallowedElementTypeEncountered, elementType);
+                emitDisallowedTypeError();
             }
             else
             {
@@ -576,13 +598,13 @@ static void validateVectorOrMatrixElementType(
                 }
                 if (!widthAllowed)
                 {
-                    sink->diagnose(sourceLoc, disallowedElementTypeEncountered, elementType);
+                    emitDisallowedTypeError();
                 }
             }
         }
         else if (!as<IRBoolType>(elementType))
         {
-            sink->diagnose(sourceLoc, disallowedElementTypeEncountered, elementType);
+            emitDisallowedTypeError();
         }
     }
 }
@@ -593,16 +615,16 @@ static void validateVectorElementCount(DiagnosticSink* sink, IRVectorType* vecto
 
     // 1-vectors are supported and are legalized/transformed properly when targetting unsupported
     // backends.
-    const IRIntegerValue minCount = 1;
+    // 0-vectors are used internally to represent conditional varying values.
+    const IRIntegerValue minCount = 0;
     const IRIntegerValue maxCount = 4;
     if ((elementCount < minCount) || (elementCount > maxCount))
     {
-        sink->diagnose(
-            vectorType->sourceLoc,
-            Diagnostics::vectorWithInvalidElementCountEncountered,
-            elementCount,
-            "1",
-            maxCount);
+        sink->diagnose(Diagnostics::VectorWithInvalidElementCountEncountered{
+            .count = String(elementCount),
+            .min = "1",
+            .max = String(maxCount),
+            .location = vectorType->sourceLoc});
     }
 }
 
@@ -625,7 +647,8 @@ void validateVectorsAndMatrices(
                 if ((rowCount && (rowCount->getValue() == 1)) ||
                     (colCount && (colCount->getValue() == 1)))
                 {
-                    sink->diagnose(matrixType->sourceLoc, Diagnostics::matrixColumnOrRowCountIsOne);
+                    sink->diagnose(Diagnostics::MatrixColumnOrRowCountIsOne{
+                        .location = matrixType->sourceLoc});
                 }
             }
 
@@ -648,7 +671,6 @@ void validateVectorsAndMatrices(
                 vectorType->sourceLoc,
                 elementType,
                 allowedWidths,
-                Diagnostics::vectorWithDisallowedElementTypeEncountered,
                 targetRequest);
 
             validateVectorElementCount(sink, vectorType);
@@ -733,10 +755,9 @@ void StructuredBufferValidationContext::validateStructuredBufferVariable(IRInst*
     // Check if the element type contains any resource/opaque handle types
     if (containsOpaqueHandleTypeCached(elementType))
     {
-        m_sink->diagnose(
-            inst->sourceLoc,
-            Diagnostics::cannotUseResourceTypeInStructuredBuffer,
-            elementType);
+        m_sink->diagnose(Diagnostics::CannotUseResourceTypeInStructuredBuffer{
+            .type = elementType,
+            .location = inst->sourceLoc});
         m_hasErrors = true;
     }
 }
@@ -778,6 +799,74 @@ bool validateStructuredBufferResourceTypes(
 void validateAtomicOperations(IRModule* module, bool skipFuncParamValidation, DiagnosticSink* sink)
 {
     validateAtomicOperations(skipFuncParamValidation, sink, module->getModuleInst());
+}
+
+static void collectAssumeAddressInsts(IRInst* inst, List<IRInst*>& out)
+{
+    if (inst->getOp() == kIROp_AssumeAddress)
+        out.add(inst);
+    for (auto child : inst->getModifiableChildren())
+        collectAssumeAddressInsts(child, out);
+}
+
+void validateAndRemoveAssumeAddress(IRModule* module, bool validate, DiagnosticSink* sink)
+{
+    List<IRInst*> assumeAddrs;
+    collectAssumeAddressInsts(module->getModuleInst(), assumeAddrs);
+
+    if (validate)
+    {
+        for (auto inst : assumeAddrs)
+        {
+            auto addr = inst->getOperand(0);
+            auto root = getRootAddr(addr);
+            bool shouldDiagnose = false;
+            if (root->getOp() == kIROp_Var)
+            {
+                // Don't diagnose vars that hold resource/buffer handles. Those
+                // always refer to device memory regardless of where the handle
+                // itself is stored (e.g. a ConstantBuffer parameter copied to a
+                // local var still points into device memory).
+                IRType* valueType = nullptr;
+                if (auto ptrType = as<IRPtrTypeBase>(root->getDataType()))
+                    valueType = ptrType->getValueType();
+                shouldDiagnose = !valueType || (!as<IRPointerLikeType>(valueType) &&
+                                                !as<IRHLSLStructuredBufferTypeBase>(valueType) &&
+                                                !as<IRByteAddressBufferTypeBase>(valueType));
+            }
+            else if (auto param = as<IRParam>(root))
+            {
+                // Also diagnose function parameters that are not of
+                // pointer/pointer-like type. Those represent function-local
+                // storage that cannot be addressed on GPU targets.
+                // (By-value params go through a kIROp_Var copy above; this
+                // catches inout/ref params where the IRParam itself is the root.)
+                auto parentBlock = as<IRBlock>(param->getParent());
+                IRGlobalValueWithCode* parentFunc = nullptr;
+                if (parentBlock)
+                    parentFunc = as<IRGlobalValueWithCode>(parentBlock->getParent());
+
+                if (parentFunc && parentBlock == parentFunc->getFirstBlock())
+                {
+                    auto type = root->getDataType();
+                    shouldDiagnose = !as<IRPtrTypeBase>(type) && !as<IRPointerLikeType>(type) &&
+                                     !as<IRHLSLStructuredBufferTypeBase>(type) &&
+                                     !as<IRByteAddressBufferTypeBase>(type);
+                }
+            }
+            if (!shouldDiagnose)
+                continue;
+            sink->diagnose(Diagnostics::InvalidAddressOf{
+                .location = inst->sourceLoc,
+            });
+        }
+    }
+
+    for (auto inst : assumeAddrs)
+    {
+        inst->replaceUsesWith(inst->getOperand(0));
+        inst->removeAndDeallocate();
+    }
 }
 
 } // namespace Slang

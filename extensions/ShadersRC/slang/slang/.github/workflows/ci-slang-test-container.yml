@@ -1,0 +1,325 @@
+name: CI Container Test Workflow
+
+on:
+  workflow_call:
+    inputs:
+      config:
+        required: true
+        type: string
+      server-count:
+        required: false
+        type: number
+        default: 4
+      runs-on:
+        required: false
+        type: string
+        default: '["Linux", "self-hosted", "GPU"]'
+      gpu-tier:
+        required: false
+        type: string
+        default: t4
+      run-rhi-tests:
+        required: false
+        type: boolean
+        default: true
+      enable-debug-layers:
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  # Run GPU tests in container with Vulkan and CUDA support.
+  #
+  # Vulkan ICD: We use libEGL_nvidia.so.0 as the Vulkan ICD instead of the
+  # default libGLX_nvidia.so.0 to avoid an intermittent crash in the EGL
+  # initialization path of driver 580.x. Both libraries export vk_icd* symbols.
+  # The default ICD causes the driver to load libEGL_nvidia.so via libglvnd's
+  # EGL vendor dispatch, which has a null-deref bug that crashes test-server
+  # processes. Using libEGL_nvidia directly as the ICD skips the EGL vendor
+  # dispatch entirely, so the buggy code path is never reached.
+  test-slang:
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    timeout-minutes: 60
+
+    permissions:
+      contents: read
+      packages: read
+
+    container:
+      image: ghcr.io/shader-slang/slang-linux-gpu-ci:v1.5.1
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: >-
+        --gpus all
+        --user root
+        --cap-add SYSLOG
+        ${{ inputs.gpu-tier == 't4' && '--device /dev/nvidia-modeset:/dev/nvidia-modeset' || '' }}
+        --device /dev/dri:/dev/dri
+        -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
+        -v /usr/share/nvidia:/usr/share/nvidia:ro
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: GPU health check
+        run: |
+          if ! output=$(nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader 2>&1); then
+            echo "nvidia-smi output: $output"
+            echo "::error::GPU health check failed — this VM has a faulty GPU. Re-run to get a new VM."
+            exit 1
+          fi
+          echo "GPU: $output"
+
+      - name: Configure Git safe directory
+        run: git config --global --add safe.directory '*'
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: "recursive"
+          fetch-depth: "1"
+
+      - name: Setup Vulkan ICD
+        uses: ./.github/actions/setup-vulkan-icd
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: slang-tests-linux-x86_64-gcc-${{ inputs.config }}
+          path: artifacts
+
+      - name: Setup test environment
+        run: |
+          if [[ "${{ inputs.config }}" == "release" ]]; then
+            cmake_config="Release"
+          else
+            cmake_config="Debug"
+          fi
+          echo "cmake_config=$cmake_config" >> $GITHUB_ENV
+
+          bin_dir="$PWD/artifacts/${cmake_config}/bin"
+          echo "bin_dir=$bin_dir" >> $GITHUB_ENV
+
+          chmod +x "$bin_dir"/* 2>/dev/null || true
+          echo "LD_LIBRARY_PATH=$PWD/artifacts/${cmake_config}/lib:$LD_LIBRARY_PATH" >> $GITHUB_ENV
+
+          # Display environment configuration
+          print-env-info
+
+      - name: Test Slang
+        run: |
+          export SLANG_RUN_SPIRV_VALIDATION=1
+          export SLANG_USE_SPV_SOURCE_LANGUAGE_UNKNOWN=1
+
+          test_roots=()
+          slang_test_args=(
+            "-category" "full"
+            "-expected-failure-list" "tests/expected-failure-github.txt"
+            "-expected-failure-list" "tests/expected-failure-linux.txt"
+            "-skip-reference-image-generation"
+            "-show-adapter-info"
+          )
+
+          case "${{ inputs.gpu-tier }}" in
+            t4)
+              # Restrict to GPU APIs so (cpu) / (llvm) tests are skipped — the
+              # CPU-only tier covers those. Intentionally NOT using -api-only:
+              # no-API tests (COMPILE directives in multi-step compile→dispatch
+              # sequences, SIMPLE/DIAGNOSTIC tests that validate SPIR-V emission)
+              # still need to run on the GPU tier for correctness.
+              slang_test_args+=("-api" "vk+cuda+dx11+dx12+mtl+wgpu")
+              # T4 cannot execute SM 8.0+ cooperative matrix PTX safely.
+              slang_test_args+=("-skip-list" "tests/skip-list-gpu-t4.txt")
+              slang_test_args+=("-expected-failure-list" "tests/expected-failure-linux-gpu.txt")
+              ;;
+            sm80plus)
+              # Keep L4/Blackwell cost bounded: run only the capability subset
+              # that T4 cannot safely cover, not a second full Linux GPU suite.
+              test_roots=("tests/cooperative-matrix/" "tests/neural/" "slang-unit-test-tool/cooperativeMatrixSubgroupTypeMetadata.internal")
+              slang_test_args+=("-api" "vk+cuda")
+              slang_test_args+=("-expected-failure-list" "tests/expected-failure-sm80-gpu.txt")
+              ;;
+            *)
+              echo "::error::unknown gpu-tier '${{ inputs.gpu-tier }}' (expected t4 or sm80plus)"
+              exit 1
+              ;;
+          esac
+
+          if [ "${{ inputs.server-count }}" -gt 1 ]; then
+            slang_test_args+=("-use-test-server")
+            slang_test_args+=("-server-count" "${{ inputs.server-count }}")
+          fi
+
+          # Skip most neural tests in debug builds to reduce CI time
+          if [[ "${{ inputs.config }}" == "debug" ]]; then
+            slang_test_args+=("-skip-list" "tests/skip-list-debug.txt")
+          fi
+
+          "$bin_dir/slang-test" "${test_roots[@]}" "${slang_test_args[@]}"
+
+      - name: Run slangc tests
+        if: inputs.gpu-tier == 't4'
+        run: |
+          PATH=$bin_dir:$PATH tools/slangc-test/test.sh
+
+      - name: Test Slang via glsl
+        if: inputs.gpu-tier == 't4' && inputs.config == 'release' && github.event_name == 'pull_request'
+        run: |
+          export SLANG_RUN_SPIRV_VALIDATION=1
+          export SLANG_USE_SPV_SOURCE_LANGUAGE_UNKNOWN=1
+          "$bin_dir/slang-test" \
+            -use-test-server \
+            -server-count ${{ inputs.server-count }} \
+            -category full \
+            -emit-spirv-via-glsl \
+            -api vk \
+            -skip-list tests/skip-list-gpu-t4.txt \
+            -expected-failure-list tests/expected-failure-via-glsl.txt \
+            -expected-failure-list tests/expected-failure-github.txt \
+            -expected-failure-list tests/expected-failure-linux.txt \
+            -expected-failure-list tests/expected-failure-linux-gpu.txt
+
+      - name: GPU post-test diagnostics
+        if: failure()
+        run: |
+          gpu_crashed=0
+          echo "=== GPU State ==="
+          if ! nvidia-smi 2>&1; then
+            echo "nvidia-smi FAILED (GPU may have crashed)"
+            echo "::error::GPU crashed during tests — retrying may help."
+            gpu_crashed=1
+          fi
+          echo ""
+          echo "=== GPU Memory & ECC ==="
+          nvidia-smi --query-gpu=name,driver_version,memory.used,memory.free,temperature.gpu,ecc.errors.uncorrected.volatile.total,pstate \
+            --format=csv,noheader 2>&1 || true
+          echo ""
+          echo "=== XID Errors ==="
+          nvidia-smi -q -d XID_ERRORS 2>&1 || true
+          echo ""
+          echo "=== GPU Process State ==="
+          nvidia-smi pmon -c 1 2>&1 || true
+          echo ""
+          echo "=== Kernel GPU Messages ==="
+          dmesg 2>/dev/null | grep -iE "nvidia|nvrm|xid|gpu|fault|segfault" | tail -50 || \
+          sudo dmesg 2>/dev/null | grep -iE "nvidia|nvrm|xid|gpu|fault|segfault" | tail -50 || \
+          echo "(dmesg not available in container)"
+          if [[ "$gpu_crashed" -eq 1 ]]; then
+            exit 1
+          fi
+
+  test-slang-rhi:
+    if: inputs.run-rhi-tests && inputs.gpu-tier == 't4'
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+      packages: read
+
+    container:
+      image: ghcr.io/shader-slang/slang-linux-gpu-ci:v1.5.1
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: >-
+        --gpus all
+        --user root
+        --cap-add SYSLOG
+        ${{ inputs.gpu-tier == 't4' && '--device /dev/nvidia-modeset:/dev/nvidia-modeset' || '' }}
+        --device /dev/dri:/dev/dri
+        -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
+        -v /usr/share/nvidia:/usr/share/nvidia:ro
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: GPU health check
+        run: |
+          if ! output=$(nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader 2>&1); then
+            echo "nvidia-smi output: $output"
+            echo "::error::GPU health check failed — this VM has a faulty GPU. Re-run to get a new VM."
+            exit 1
+          fi
+          echo "GPU: $output"
+
+      - name: Configure Git safe directory
+        run: git config --global --add safe.directory '*'
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: "recursive"
+          fetch-depth: "1"
+
+      - name: Setup Vulkan ICD
+        uses: ./.github/actions/setup-vulkan-icd
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: slang-tests-linux-x86_64-gcc-${{ inputs.config }}
+          path: artifacts
+
+      - name: Setup test environment
+        run: |
+          if [[ "${{ inputs.config }}" == "release" ]]; then
+            cmake_config="Release"
+          else
+            cmake_config="Debug"
+          fi
+          echo "cmake_config=$cmake_config" >> $GITHUB_ENV
+
+          bin_dir="$PWD/artifacts/${cmake_config}/bin"
+          echo "bin_dir=$bin_dir" >> $GITHUB_ENV
+
+          chmod +x "$bin_dir"/* 2>/dev/null || true
+          echo "LD_LIBRARY_PATH=$PWD/artifacts/${cmake_config}/lib:$LD_LIBRARY_PATH" >> $GITHUB_ENV
+
+          # Display environment configuration
+          print-env-info
+
+      - name: Run slang-rhi tests
+        run: |
+          export SLANG_RHI_EXCLUDE_TESTS="md-clear*,cmd-copy*,cmd-upload*,fence*,staging-heap*,texture-create*"
+          "$bin_dir/slang-rhi-tests" -check-devices -tce="$SLANG_RHI_EXCLUDE_TESTS"
+
+      - name: Run slang-rhi tests (OptiX 8.0)
+        run: |
+          "$bin_dir/slang-rhi-tests" -check-devices -optix-version=80000 -tc="ray-tracing-*.cuda"
+
+      - name: Run slang-rhi tests (OptiX 8.1)
+        run: |
+          "$bin_dir/slang-rhi-tests" -check-devices -optix-version=80100 -tc="ray-tracing-*.cuda"
+
+      - name: GPU post-test diagnostics
+        if: failure()
+        run: |
+          gpu_crashed=0
+          echo "=== GPU State ==="
+          if ! nvidia-smi 2>&1; then
+            echo "nvidia-smi FAILED (GPU may have crashed)"
+            echo "::error::GPU crashed during tests — retrying may help."
+            gpu_crashed=1
+          fi
+          echo ""
+          echo "=== GPU Memory & ECC ==="
+          nvidia-smi --query-gpu=name,driver_version,memory.used,memory.free,temperature.gpu,ecc.errors.uncorrected.volatile.total,pstate \
+            --format=csv,noheader 2>&1 || true
+          echo ""
+          echo "=== XID Errors ==="
+          nvidia-smi -q -d XID_ERRORS 2>&1 || true
+          echo ""
+          echo "=== GPU Process State ==="
+          nvidia-smi pmon -c 1 2>&1 || true
+          echo ""
+          echo "=== Kernel GPU Messages ==="
+          dmesg 2>/dev/null | grep -iE "nvidia|nvrm|xid|gpu|fault|segfault" | tail -50 || \
+          sudo dmesg 2>/dev/null | grep -iE "nvidia|nvrm|xid|gpu|fault|segfault" | tail -50 || \
+          echo "(dmesg not available in container)"
+          if [[ "$gpu_crashed" -eq 1 ]]; then
+            exit 1
+          fi

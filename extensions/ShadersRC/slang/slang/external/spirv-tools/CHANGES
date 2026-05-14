@@ -1,5 +1,84 @@
 Revision history for SPIRV-Tools
 
+v2026.2 2026-04-24
+  - General
+    - Fix build for NonSemanticShaderDebugInfo in GN (#6647)
+    - Support SPV_KHR_abort and SPV_KHR_constant_data (#6625)
+    - Support versioned NonSemanticShaderDebugInfo imports (#6555)
+    - Fix C++20 compilation issue with large integer literals (#6557)
+    - Remove SVA (Shader Validation Assistant) (#6550)
+    - Improved Kokoro build configuration and storage usage (#6573, #6551)
+    - Various dependency rolls and CI updates
+  - Optimizer
+    - Fold OpCompositeExtract feeding from OpCopyLogical or OpLoad (#6614)
+    - Fix DebugValue placements and initialization (#6599, #6626)
+    - Support OpConstantCompositeReplicateEXT in constant manager (#6616)
+    - Aggressive DCE support for untyped pointers and OpUntypedVariableKHR (#6602, #6607)
+    - Optimize SPV_EXT_opacity_micromap and SPV_EXT_shader_invocation_reorder (#6571)
+    - Add LegalizeMultidimArrayPass and improve access chain reordering (#6535, #6545)
+    - Added various folding and reassociation rules (#6453, #6504, #6454, #6456)
+    - Support for optimizing SPV_NV_push_constant_bank (#6547)
+  - Validator
+    - Add validation for 4-bit integer types (#6644)
+    - Support and validate SPV_KHR_constant_data (OpConstantDataKHR, OpSpecConstantDataKHR) (#6646, #6643, #6642)
+    - Validate NonSemanticShaderDebugInfo 101 and versioned imports (#6635, #6555)
+    - Improve validation for Intel SPIR-V extensions and various KHR/EXT extensions (#6232, #6589, #6583, etc.)
+    - Extensive validation coverage for OpSpecConstantOp (#6596, #6585, #6582, #6579, #6578, #6576)
+    - Check output location uniqueness for GeometryStreams (#6630)
+    - Improved validation for variables, constants, and types (#6634, #6598, #6595, #6568)
+    - Added validation for several new opcodes and capabilities (OpGroupAsyncCopy, OpLifetimeStart/Stop, etc.) (#6519, #6514, #6515)
+  - Assembler/Disassembler
+    - Add --handle-unknown-opcodes flag to spirv-dis (#6604)
+    - Handle leading + in hex float literals in assembler (#6565)
+    - Validate bit width of float types with explicit encodings in assembler (#6562)
+
+v2026.1 2026-01-22
+  - General
+    - spirv-tools: Fix infinite recursion in SmallVector::operator== on MSVC (#6470)
+    - Add support for SPV_NV_push_constant_bank (#6507)
+    - Enable UseMultiToolTask for msbuild performance (#6472)
+    - Fix asan error in stack usage (#6434)
+    - Fix crash in array length validation (#6500)
+    - Fix infinite loop in logical pointer validation (#6450)
+    - Implement SPV_EXT_descriptor_heap (#6503)
+  - Optimizer
+    - Adding constant folding for NMin, NMax and NClamp (#6433)
+    - Also remap DebugScope instructions (#6501)
+    - Change ValueNumber to use spivOpcodeIsCommutativeBinaryOperator (#6431)
+    - Extending factoring folding rules to support subtraction (#6432)
+    - Extending negation folding rules (#6444)
+    - Folding Rules For Common Comparisons (#6437)
+    - Folding rules for negation and cancellation (#6452)
+    - Harden CFGCleanupPass against ID overflow (#6439)
+    - Harden CombineAccessChainsPass against ID overflow (#6440)
+    - Harden CopyPropagateArraysPass against ID overflow (#6441)
+    - Remove lingering debug-scopes. (#6416)
+    - add adce test for debug declare (#6462)
+    - fix adce when ns debug info present (#6217) (#6420)
+  - Validator
+    - Handle OpTypeVectorIdEXT in validate_interfaces.cpp (#6492)
+    - Validate SPV_EXT_long_vector (#6471)
+    - Validate floats/int Image Operands are 32-bit (#6477)
+    - Add Mesh Shading Read Output check (#6426)
+    - Add Mesh/Task to check for LocalSize (#6459)
+    - Add missing LOD non-zero MS (#6496)
+    - Add width to IsFloatScalarType (#6489)
+    - Better atomic storage class message (#6425)
+    - Better error message when types are the same (#6427)
+    - Check Mesh Topology builtin by entry point (#6457)
+    - Check for CoopMat scope (#6442)
+    - Combine Image Coordinate checks (#6494)
+    - Fix crash with bad OpUntypedArrayLengthKHR (#6493)
+    - Label VUID 10823 (#6488)
+    - Provide RuntimeDescriptorArray hint in message (#6448)
+    - Use new StorageClassToString util (#6460)
+    - Use validation_state.cpp helpers (#6478)
+    - Validate ImageQuerySizeLod is 32-bit (#6479)
+    - Validate Mesh Shader output are an array (#6449)
+    - add missing relational ops to InvalidTypePass (#6495)
+  - Diff
+    - diff: Match OpExtInst in debug and types/values sections (#6430)
+
 v2025.5 2025-11-18
   - General
   - Validator

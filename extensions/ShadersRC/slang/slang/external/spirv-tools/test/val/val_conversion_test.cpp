@@ -1371,6 +1371,7 @@ OpExtension "SPV_KHR_cooperative_matrix"
 OpExtension "SPV_KHR_vulkan_memory_model"
 OpMemoryModel Logical VulkanKHR
 OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 32 1 1
 %void = OpTypeVoid
 %func = OpTypeFunction %void
 %bool = OpTypeBool
@@ -1384,11 +1385,11 @@ OpEntryPoint GLCompute %main "main"
 %u32_8 = OpConstant %u32 8
 %u32_4 = OpConstant %u32 4
 %subgroup = OpConstant %u32 3
-%device = OpConstant %u32 1
+%workgroup = OpConstant %u32 2
 %use_A = OpConstant %u32 0
 
 %f16mat = OpTypeCooperativeMatrixKHR %f16 %subgroup %u32_8 %u32_8 %use_A
-%f32mat = OpTypeCooperativeMatrixKHR %f32 %device %u32_8 %u32_8 %use_A
+%f32mat = OpTypeCooperativeMatrixKHR %f32 %workgroup %u32_8 %u32_8 %use_A
 
 %f16_1 = OpConstant %f16 1
 
@@ -2543,6 +2544,338 @@ OpFunctionEnd)";
   EXPECT_THAT(getDiagnosticString(),
               HasSubstr("Expected number of components to be identical"));
 }
+
+TEST_F(ValidateConversion, ConvertPtrToUVectorWithMaskedGatherScatterSuccess) {
+  const std::string spirv = R"(
+OpCapability Kernel
+OpCapability Addresses
+OpCapability Int64
+OpCapability MaskedGatherScatterINTEL
+OpExtension "SPV_INTEL_masked_gather_scatter"
+OpMemoryModel Physical64 OpenCL
+OpEntryPoint Kernel %main "main"
+%void = OpTypeVoid
+%u64 = OpTypeInt 64 0
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer CrossWorkgroup %u32
+%v2ptr = OpTypeVector %ptr 2
+%v2u64 = OpTypeVector %u64 2
+%fn = OpTypeFunction %void %v2ptr
+%main = OpFunction %void None %fn
+%p = OpFunctionParameter %v2ptr
+%entry = OpLabel
+%result = OpConvertPtrToU %v2u64 %p
+OpReturn
+OpFunctionEnd
+)";
+  CompileSuccessfully(spirv.c_str());
+  ASSERT_EQ(SPV_SUCCESS, ValidateInstructions());
+}
+
+TEST_F(ValidateConversion, ConvertPtrToUVectorWithoutCapabilityFails) {
+  const std::string spirv = R"(
+OpCapability Kernel
+OpCapability Addresses
+OpCapability Int64
+OpMemoryModel Physical64 OpenCL
+OpEntryPoint Kernel %main "main"
+%void = OpTypeVoid
+%u64 = OpTypeInt 64 0
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer CrossWorkgroup %u32
+%v2ptr = OpTypeVector %ptr 2
+%v2u64 = OpTypeVector %u64 2
+%fn = OpTypeFunction %void %v2ptr
+%main = OpFunction %void None %fn
+%p = OpFunctionParameter %v2ptr
+%entry = OpLabel
+%result = OpConvertPtrToU %v2u64 %p
+OpReturn
+OpFunctionEnd
+)";
+  CompileSuccessfully(spirv.c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_ID, ValidateInstructions());
+  EXPECT_THAT(getDiagnosticString(), HasSubstr("OpTypeVector Component Type"));
+}
+
+TEST_F(ValidateConversion, ConvertPtrToUVectorResultScalarInputFails) {
+  const std::string spirv = R"(
+OpCapability Kernel
+OpCapability Addresses
+OpCapability Int64
+OpCapability MaskedGatherScatterINTEL
+OpExtension "SPV_INTEL_masked_gather_scatter"
+OpMemoryModel Physical64 OpenCL
+OpEntryPoint Kernel %main "main"
+%void = OpTypeVoid
+%u64 = OpTypeInt 64 0
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer CrossWorkgroup %u32
+%v2u64 = OpTypeVector %u64 2
+%fn = OpTypeFunction %void %ptr
+%main = OpFunction %void None %fn
+%p = OpFunctionParameter %ptr
+%entry = OpLabel
+%result = OpConvertPtrToU %v2u64 %p
+OpReturn
+OpFunctionEnd
+)";
+  CompileSuccessfully(spirv.c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("Expected input to be a vector when Result Type is a "
+                        "vector: ConvertPtrToU"));
+}
+
+TEST_F(ValidateConversion, ConvertPtrToUVectorDimensionMismatchFails) {
+  const std::string spirv = R"(
+OpCapability Kernel
+OpCapability Addresses
+OpCapability Int64
+OpCapability MaskedGatherScatterINTEL
+OpExtension "SPV_INTEL_masked_gather_scatter"
+OpMemoryModel Physical64 OpenCL
+OpEntryPoint Kernel %main "main"
+%void = OpTypeVoid
+%u64 = OpTypeInt 64 0
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer CrossWorkgroup %u32
+%v2ptr = OpTypeVector %ptr 2
+%v4u64 = OpTypeVector %u64 4
+%fn = OpTypeFunction %void %v2ptr
+%main = OpFunction %void None %fn
+%p = OpFunctionParameter %v2ptr
+%entry = OpLabel
+%result = OpConvertPtrToU %v4u64 %p
+OpReturn
+OpFunctionEnd
+)";
+  CompileSuccessfully(spirv.c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Expected input to have the same dimension as Result Type: "
+                "ConvertPtrToU"));
+}
+
+TEST_F(ValidateConversion, ConvertUToPtrVectorWithMaskedGatherScatterSuccess) {
+  const std::string spirv = R"(
+OpCapability Kernel
+OpCapability Addresses
+OpCapability Int64
+OpCapability MaskedGatherScatterINTEL
+OpExtension "SPV_INTEL_masked_gather_scatter"
+OpMemoryModel Physical64 OpenCL
+OpEntryPoint Kernel %main "main"
+%void = OpTypeVoid
+%u64 = OpTypeInt 64 0
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer CrossWorkgroup %u32
+%v2ptr = OpTypeVector %ptr 2
+%v2u64 = OpTypeVector %u64 2
+%fn = OpTypeFunction %void %v2u64
+%main = OpFunction %void None %fn
+%addrs = OpFunctionParameter %v2u64
+%entry = OpLabel
+%result = OpConvertUToPtr %v2ptr %addrs
+OpReturn
+OpFunctionEnd
+)";
+  CompileSuccessfully(spirv.c_str());
+  ASSERT_EQ(SPV_SUCCESS, ValidateInstructions());
+}
+
+TEST_F(ValidateConversion, ConvertUToPtrVectorWithoutCapabilityFails) {
+  const std::string spirv = R"(
+OpCapability Kernel
+OpCapability Addresses
+OpCapability Int64
+OpMemoryModel Physical64 OpenCL
+OpEntryPoint Kernel %main "main"
+%void = OpTypeVoid
+%u64 = OpTypeInt 64 0
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer CrossWorkgroup %u32
+%v2ptr = OpTypeVector %ptr 2
+%v2u64 = OpTypeVector %u64 2
+%fn = OpTypeFunction %void %v2u64
+%main = OpFunction %void None %fn
+%addrs = OpFunctionParameter %v2u64
+%entry = OpLabel
+%result = OpConvertUToPtr %v2ptr %addrs
+OpReturn
+OpFunctionEnd
+)";
+  CompileSuccessfully(spirv.c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_ID, ValidateInstructions());
+  EXPECT_THAT(getDiagnosticString(), HasSubstr("OpTypeVector Component Type"));
+}
+
+TEST_F(ValidateConversion, ConvertUToPtrVectorResultScalarInputFails) {
+  const std::string spirv = R"(
+OpCapability Kernel
+OpCapability Addresses
+OpCapability Int64
+OpCapability MaskedGatherScatterINTEL
+OpExtension "SPV_INTEL_masked_gather_scatter"
+OpMemoryModel Physical64 OpenCL
+OpEntryPoint Kernel %main "main"
+%void = OpTypeVoid
+%u64 = OpTypeInt 64 0
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer CrossWorkgroup %u32
+%v2ptr = OpTypeVector %ptr 2
+%fn = OpTypeFunction %void %u64
+%main = OpFunction %void None %fn
+%addr = OpFunctionParameter %u64
+%entry = OpLabel
+%result = OpConvertUToPtr %v2ptr %addr
+OpReturn
+OpFunctionEnd
+)";
+  CompileSuccessfully(spirv.c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("Expected input to be a vector when Result Type is a "
+                        "vector: ConvertUToPtr"));
+}
+
+TEST_F(ValidateConversion, ConvertUToPtrVectorDimensionMismatchFails) {
+  const std::string spirv = R"(
+OpCapability Kernel
+OpCapability Addresses
+OpCapability Int64
+OpCapability MaskedGatherScatterINTEL
+OpExtension "SPV_INTEL_masked_gather_scatter"
+OpMemoryModel Physical64 OpenCL
+OpEntryPoint Kernel %main "main"
+%void = OpTypeVoid
+%u64 = OpTypeInt 64 0
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer CrossWorkgroup %u32
+%v4ptr = OpTypeVector %ptr 4
+%v2u64 = OpTypeVector %u64 2
+%fn = OpTypeFunction %void %v2u64
+%main = OpFunction %void None %fn
+%addrs = OpFunctionParameter %v2u64
+%entry = OpLabel
+%result = OpConvertUToPtr %v4ptr %addrs
+OpReturn
+OpFunctionEnd
+)";
+  CompileSuccessfully(spirv.c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Expected input to have the same dimension as Result Type: "
+                "ConvertUToPtr"));
+}
+
+TEST_F(ValidateConversion, ConvertPtrToUVec4WithMaskedGatherScatterSuccess) {
+  const std::string spirv = R"(
+OpCapability Kernel
+OpCapability Addresses
+OpCapability Int64
+OpCapability MaskedGatherScatterINTEL
+OpExtension "SPV_INTEL_masked_gather_scatter"
+OpMemoryModel Physical64 OpenCL
+OpEntryPoint Kernel %main "main"
+%void = OpTypeVoid
+%u64 = OpTypeInt 64 0
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer CrossWorkgroup %u32
+%v4ptr = OpTypeVector %ptr 4
+%v4u64 = OpTypeVector %u64 4
+%fn = OpTypeFunction %void %v4ptr
+%main = OpFunction %void None %fn
+%p = OpFunctionParameter %v4ptr
+%entry = OpLabel
+%result = OpConvertPtrToU %v4u64 %p
+OpReturn
+OpFunctionEnd
+)";
+  CompileSuccessfully(spirv.c_str());
+  ASSERT_EQ(SPV_SUCCESS, ValidateInstructions());
+}
+
+TEST_F(ValidateConversion, ConvertUToPtrVec4WithMaskedGatherScatterSuccess) {
+  const std::string spirv = R"(
+OpCapability Kernel
+OpCapability Addresses
+OpCapability Int64
+OpCapability MaskedGatherScatterINTEL
+OpExtension "SPV_INTEL_masked_gather_scatter"
+OpMemoryModel Physical64 OpenCL
+OpEntryPoint Kernel %main "main"
+%void = OpTypeVoid
+%u64 = OpTypeInt 64 0
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer CrossWorkgroup %u32
+%v4ptr = OpTypeVector %ptr 4
+%v4u64 = OpTypeVector %u64 4
+%fn = OpTypeFunction %void %v4u64
+%main = OpFunction %void None %fn
+%addrs = OpFunctionParameter %v4u64
+%entry = OpLabel
+%result = OpConvertUToPtr %v4ptr %addrs
+OpReturn
+OpFunctionEnd
+)";
+  CompileSuccessfully(spirv.c_str());
+  ASSERT_EQ(SPV_SUCCESS, ValidateInstructions());
+}
+
+// Test that scalar conversion still works with capability present
+TEST_F(ValidateConversion, ConvertPtrToUScalarWithMaskedGatherScatterSuccess) {
+  const std::string spirv = R"(
+OpCapability Kernel
+OpCapability Addresses
+OpCapability Int64
+OpCapability MaskedGatherScatterINTEL
+OpExtension "SPV_INTEL_masked_gather_scatter"
+OpMemoryModel Physical64 OpenCL
+OpEntryPoint Kernel %main "main"
+%void = OpTypeVoid
+%u64 = OpTypeInt 64 0
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer CrossWorkgroup %u32
+%fn = OpTypeFunction %void %ptr
+%main = OpFunction %void None %fn
+%p = OpFunctionParameter %ptr
+%entry = OpLabel
+%result = OpConvertPtrToU %u64 %p
+OpReturn
+OpFunctionEnd
+)";
+  CompileSuccessfully(spirv.c_str());
+  ASSERT_EQ(SPV_SUCCESS, ValidateInstructions());
+}
+
+TEST_F(ValidateConversion, ConvertUToPtrScalarWithMaskedGatherScatterSuccess) {
+  const std::string spirv = R"(
+OpCapability Kernel
+OpCapability Addresses
+OpCapability Int64
+OpCapability MaskedGatherScatterINTEL
+OpExtension "SPV_INTEL_masked_gather_scatter"
+OpMemoryModel Physical64 OpenCL
+OpEntryPoint Kernel %main "main"
+%void = OpTypeVoid
+%u64 = OpTypeInt 64 0
+%u32 = OpTypeInt 32 0
+%ptr = OpTypePointer CrossWorkgroup %u32
+%fn = OpTypeFunction %void %u64
+%main = OpFunction %void None %fn
+%addr = OpFunctionParameter %u64
+%entry = OpLabel
+%result = OpConvertUToPtr %ptr %addr
+OpReturn
+OpFunctionEnd
+)";
+  CompileSuccessfully(spirv.c_str());
+  ASSERT_EQ(SPV_SUCCESS, ValidateInstructions());
+}
+
 }  // namespace
 }  // namespace val
 }  // namespace spvtools

@@ -523,6 +523,7 @@ std::function<bool(unsigned)> spvOperandCanBeForwardDeclaredFunction(
     case spv::Op::OpSelectionMerge:
     case spv::Op::OpDecorate:
     case spv::Op::OpMemberDecorate:
+    case spv::Op::OpMemberDecorateIdEXT:
     case spv::Op::OpDecorateId:
     case spv::Op::OpDecorateStringGOOGLE:
     case spv::Op::OpMemberDecorateStringGOOGLE:
@@ -541,6 +542,11 @@ std::function<bool(unsigned)> spvOperandCanBeForwardDeclaredFunction(
       break;
 
     case spv::Op::OpFunctionCall:
+      // The Function parameter.
+      out = [](unsigned index) { return index == 2; };
+      break;
+
+    case spv::Op::OpConstantFunctionPointerINTEL:
       // The Function parameter.
       out = [](unsigned index) { return index == 2; };
       break;

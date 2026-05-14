@@ -282,8 +282,9 @@ TEST_F(ValidateAtomics, AtomicLoadVulkanWrongStorageClass) {
               AnyVUID("VUID-StandaloneSpirv-None-04645"));
   EXPECT_THAT(
       getDiagnosticString(),
-      HasSubstr("in Vulkan environment, Workgroup Storage Class is limited to "
-                "MeshNV, TaskNV, and GLCompute execution model"));
+      HasSubstr(
+          "in Vulkan environment, Workgroup Storage Class is limited to "
+          "MeshEXT, TaskEXT, MeshNV, TaskNV, and GLCompute execution model"));
 }
 
 TEST_F(ValidateAtomics, AtomicAddIntVulkanWrongType1) {
@@ -714,8 +715,9 @@ OpAtomicStore %f32_var %device %relaxed %f32_1
               AnyVUID("VUID-StandaloneSpirv-None-04645"));
   EXPECT_THAT(
       getDiagnosticString(),
-      HasSubstr("in Vulkan environment, Workgroup Storage Class is limited to "
-                "MeshNV, TaskNV, and GLCompute execution model"));
+      HasSubstr(
+          "in Vulkan environment, Workgroup Storage Class is limited to "
+          "MeshEXT, TaskEXT, MeshNV, TaskNV, and GLCompute execution model"));
 }
 
 TEST_F(ValidateAtomics, AtomicStoreFloatVulkan) {
@@ -783,7 +785,8 @@ OpAtomicStore %f32_var_function %device %relaxed %f32_1
               AnyVUID("VUID-StandaloneSpirv-None-04686"));
   EXPECT_THAT(
       getDiagnosticString(),
-      HasSubstr("AtomicStore: Vulkan spec only allows storage classes for "
+      HasSubstr("AtomicStore: Function is not allowed, the Vulkan spec only "
+                "allows storage classes for "
                 "atomic to be: Uniform, Workgroup, Image, StorageBuffer, "
                 "PhysicalStorageBuffer or TaskPayloadWorkgroupEXT."));
 }
@@ -1081,7 +1084,8 @@ OpAtomicStore %f32_im_var %device %relaxed %f32_1
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions(SPV_ENV_OPENCL_1_2));
   EXPECT_THAT(
       getDiagnosticString(),
-      HasSubstr("AtomicStore: storage class must be Function, Workgroup, "
+      HasSubstr("AtomicStore: storage class is Image, but must be Function, "
+                "Workgroup, "
                 "CrossWorkGroup or Generic in the OpenCL environment."));
 }
 
@@ -1093,8 +1097,8 @@ OpAtomicStore %f32_uc_var %device %relaxed %f32_1
   CompileSuccessfully(GenerateKernelCode(body));
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
   EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("AtomicStore: storage class forbidden by universal "
-                        "validation rules."));
+              HasSubstr("AtomicStore: Can not be used with storage class "
+                        "UniformConstant by universal validation rules"));
 }
 
 TEST_F(ValidateAtomics, AtomicStoreWrongScopeType) {

@@ -90,6 +90,7 @@ struct TriangleBLAS
 
         ComPtr<IAccelerationStructure> draftAS;
         AccelerationStructureDesc draftCreateDesc;
+        draftCreateDesc.kind = AccelerationStructureKind::BottomLevel;
         draftCreateDesc.size = sizes.accelerationStructureSize;
         REQUIRE_CALL(device->createAccelerationStructure(draftCreateDesc, draftAS.writeRef()));
 
@@ -107,6 +108,7 @@ struct TriangleBLAS
         uint64_t compactedSize = 0;
         compactedSizeQuery->getResult(0, 1, &compactedSize);
         AccelerationStructureDesc createDesc;
+        createDesc.kind = AccelerationStructureKind::BottomLevel;
         createDesc.size = compactedSize;
         REQUIRE_CALL(device->createAccelerationStructure(createDesc, blas.writeRef()));
 
@@ -249,6 +251,7 @@ struct SphereBLAS
 
         ComPtr<IAccelerationStructure> draftAS;
         AccelerationStructureDesc draftCreateDesc;
+        draftCreateDesc.kind = AccelerationStructureKind::BottomLevel;
         draftCreateDesc.size = sizes.accelerationStructureSize;
         REQUIRE_CALL(device->createAccelerationStructure(draftCreateDesc, draftAS.writeRef()));
 
@@ -266,6 +269,7 @@ struct SphereBLAS
         uint64_t compactedSize = 0;
         compactedSizeQuery->getResult(0, 1, &compactedSize);
         AccelerationStructureDesc createDesc;
+        createDesc.kind = AccelerationStructureKind::BottomLevel;
         createDesc.size = compactedSize;
         REQUIRE_CALL(device->createAccelerationStructure(createDesc, blas.writeRef()));
 
@@ -363,6 +367,7 @@ struct SingleCustomGeometryBLAS
 
         ComPtr<IAccelerationStructure> draftAS;
         AccelerationStructureDesc draftCreateDesc;
+        draftCreateDesc.kind = AccelerationStructureKind::BottomLevel;
         draftCreateDesc.size = sizes.accelerationStructureSize;
         REQUIRE_CALL(device->createAccelerationStructure(draftCreateDesc, draftAS.writeRef()));
 
@@ -380,6 +385,7 @@ struct SingleCustomGeometryBLAS
         uint64_t compactedSize = 0;
         compactedSizeQuery->getResult(0, 1, &compactedSize);
         AccelerationStructureDesc createDesc;
+        createDesc.kind = AccelerationStructureKind::BottomLevel;
         createDesc.size = compactedSize;
         REQUIRE_CALL(device->createAccelerationStructure(createDesc, blas.writeRef()));
 
@@ -478,6 +484,7 @@ struct SingleTriangleVertexMotionBLAS
 
         ComPtr<IAccelerationStructure> draftAS;
         AccelerationStructureDesc draftCreateDesc;
+        draftCreateDesc.kind = AccelerationStructureKind::BottomLevel;
         draftCreateDesc.size = sizes.accelerationStructureSize;
         REQUIRE_CALL(device->createAccelerationStructure(draftCreateDesc, draftAS.writeRef()));
 
@@ -495,6 +502,7 @@ struct SingleTriangleVertexMotionBLAS
         uint64_t compactedSize = 0;
         compactedSizeQuery->getResult(0, 1, &compactedSize);
         AccelerationStructureDesc createDesc;
+        createDesc.kind = AccelerationStructureKind::BottomLevel;
         createDesc.size = compactedSize;
         REQUIRE_CALL(device->createAccelerationStructure(createDesc, blas.writeRef()));
 
@@ -588,6 +596,7 @@ struct LssBLAS
 
         ComPtr<IAccelerationStructure> draftAS;
         AccelerationStructureDesc draftCreateDesc;
+        draftCreateDesc.kind = AccelerationStructureKind::BottomLevel;
         draftCreateDesc.size = sizes.accelerationStructureSize;
         REQUIRE_CALL(device->createAccelerationStructure(draftCreateDesc, draftAS.writeRef()));
 
@@ -605,6 +614,7 @@ struct LssBLAS
         uint64_t compactedSize = 0;
         compactedSizeQuery->getResult(0, 1, &compactedSize);
         AccelerationStructureDesc createDesc;
+        createDesc.kind = AccelerationStructureKind::BottomLevel;
         createDesc.size = compactedSize;
         REQUIRE_CALL(device->createAccelerationStructure(createDesc, blas.writeRef()));
 
@@ -687,7 +697,7 @@ struct TLAS
         };
         const float* transformMatrix = transform ? transform : kIdentityTransform;
         memcpy(&genericInstanceDescs[0].transform[0][0], transformMatrix, sizeof(float) * 12);
-        genericInstanceDescs[0].instanceID = 0;
+        genericInstanceDescs[0].instanceID = 0xF00D;
         genericInstanceDescs[0].instanceMask = 0xFF;
         genericInstanceDescs[0].instanceContributionToHitGroupIndex = 0;
         genericInstanceDescs[0].accelerationStructure = blas->getHandle();
@@ -729,6 +739,7 @@ struct TLAS
         ComPtr<IBuffer> scratchBuffer = device->createBuffer(scratchBufferDesc);
 
         AccelerationStructureDesc createDesc{};
+        createDesc.kind = AccelerationStructureKind::TopLevel;
         createDesc.size = sizes.accelerationStructureSize;
 
         REQUIRE_CALL(device->createAccelerationStructure(createDesc, tlas.writeRef()));
@@ -808,6 +819,7 @@ struct VertexMotionInstanceTLAS
         ComPtr<IBuffer> scratchBuffer = device->createBuffer(scratchBufferDesc);
 
         AccelerationStructureDesc createDesc;
+        createDesc.kind = AccelerationStructureKind::TopLevel;
         createDesc.size = sizes.accelerationStructureSize;
 
         createDesc.motionInfo.enabled = true;
@@ -888,6 +900,7 @@ struct MatrixMotionInstanceTLAS
         ComPtr<IBuffer> scratchBuffer = device->createBuffer(scratchBufferDesc);
 
         AccelerationStructureDesc createDesc{};
+        createDesc.kind = AccelerationStructureKind::TopLevel;
         createDesc.size = sizes.accelerationStructureSize;
         createDesc.flags = AccelerationStructureBuildFlags::CreateMotion;
 
@@ -968,6 +981,7 @@ struct SrtMotionInstanceTLAS
         ComPtr<IBuffer> scratchBuffer = device->createBuffer(scratchBufferDesc);
 
         AccelerationStructureDesc createDesc{};
+        createDesc.kind = AccelerationStructureKind::TopLevel;
         createDesc.size = sizes.accelerationStructureSize;
         createDesc.flags = AccelerationStructureBuildFlags::CreateMotion;
 
@@ -1028,7 +1042,9 @@ struct RayTracingTestPipeline
         const std::vector<const char*>& raygenNames,
         const std::vector<HitGroupProgramNames>& programNames,
         const std::vector<const char*>& missNames,
-        RayTracingPipelineFlags flags = RayTracingPipelineFlags::None
+        RayTracingPipelineFlags flags = RayTracingPipelineFlags::None,
+        const ShaderRecordOverwrite* hitGroupSbtData = nullptr,
+        const std::vector<const char*>& callableNames = std::vector<const char*>()
     )
     {
         ComPtr<IShaderProgram> rayTracingProgram;
@@ -1059,6 +1075,9 @@ struct RayTracingTestPipeline
         for (const char* missName : missNames)
             programsToLoad.push_back(missName);
 
+        for (const char* callableName : callableNames)
+            programsToLoad.push_back(callableName);
+
         REQUIRE_CALL(loadProgram(device, filepath, programsToLoad, rayTracingProgram.writeRef()));
 
         std::vector<std::string> hitgroupNames;
@@ -1086,7 +1105,7 @@ struct RayTracingTestPipeline
         rtpDesc.program = rayTracingProgram;
         rtpDesc.hitGroupCount = hitGroups.size();
         rtpDesc.hitGroups = hitGroups.data();
-        rtpDesc.maxRayPayloadSize = 64;
+        rtpDesc.maxRayPayloadSize = 128;
         rtpDesc.maxAttributeSizeInBytes = 8;
         rtpDesc.maxRecursion = 2;
         rtpDesc.flags = flags;
@@ -1098,10 +1117,13 @@ struct RayTracingTestPipeline
         shaderTableDesc.program = rayTracingProgram;
         shaderTableDesc.hitGroupCount = hitgroupNames.size();
         shaderTableDesc.hitGroupNames = hitgroupNamesCstr.data();
+        shaderTableDesc.hitGroupRecordOverwrites = hitGroupSbtData;
         shaderTableDesc.rayGenShaderCount = raygenNames.size();
         shaderTableDesc.rayGenShaderEntryPointNames = const_cast<const char**>(raygenNames.data());
         shaderTableDesc.missShaderCount = missNames.size();
         shaderTableDesc.missShaderEntryPointNames = const_cast<const char**>(missNames.data());
+        shaderTableDesc.callableShaderCount = callableNames.size();
+        shaderTableDesc.callableShaderEntryPointNames = const_cast<const char**>(callableNames.data());
         REQUIRE_CALL(device->createShaderTable(shaderTableDesc, shaderTable.writeRef()));
     }
 };

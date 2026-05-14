@@ -1855,6 +1855,7 @@ void TShader::setUniformLocationBase(int base)
 {
     intermediate->setUniformLocationBase(base);
 }
+void TShader::setBindingsPerResourceType() { intermediate->setBindingsPerResourceType(); }
 void TShader::setNoStorageFormat(bool useUnknownFormat) { intermediate->setNoStorageFormat(useUnknownFormat); }
 void TShader::setResourceSetBinding(const std::vector<std::string>& base)   { intermediate->setResourceSetBinding(base); }
 void TShader::setTextureSamplerTransformMode(EShTextureSamplerTransformMode mode) { intermediate->setTextureSamplerTransformMode(mode); }
@@ -1979,6 +1980,14 @@ bool TProgram::link(EShMessages messages)
             error = true;
     }
 
+    if (messages & EShMsgAST) {
+        for (int s = 0; s < EShLangCount; ++s) {
+            if (intermediate[s] == nullptr)
+                continue;
+            intermediate[s]->output(*infoSink, true);
+        }
+    }
+
     return ! error;
 }
 
@@ -2044,9 +2053,6 @@ bool TProgram::linkStage(EShLanguage stage, EShMessages messages)
     }
     intermediate[stage]->finalCheck(*infoSink, (messages & EShMsgKeepUncalled) != 0);
 
-    if (messages & EShMsgAST)
-        intermediate[stage]->output(*infoSink, true);
-
     return intermediate[stage]->getNumErrors() == 0;
 }
 
@@ -2070,9 +2076,27 @@ bool TProgram::crossStageCheck(EShMessages messages) {
             activeStages.push_back(intermediate[s]);
     }
 
+    class TFinalLinkTraverser : public TIntermTraverser {
+    public:
+        TFinalLinkTraverser() { }
+        virtual ~TFinalLinkTraverser() { }
+
+        virtual void visitSymbol(TIntermSymbol* symbol)
+        {
+            // Implicitly size arrays.
+            // If an unsized array is left as unsized, it effectively
+            // becomes run-time sized.
+            symbol->getWritableType().adoptImplicitArraySizes(false);
+        }
+    } finalLinkTraverser;
+
     // no extra linking if there is only one stage
-    if (! (activeStages.size() > 1))
+    if (! (activeStages.size() > 1)) {
+        if (activeStages.size() == 1 && activeStages[0]->getTreeRoot()) {
+            activeStages[0]->getTreeRoot()->traverse(&finalLinkTraverser);
+        }
         return true;
+    }
 
     // setup temporary tree to hold unfirom objects from different stages
     TIntermediate* firstIntermediate = activeStages.front();
@@ -2094,6 +2118,12 @@ bool TProgram::crossStageCheck(EShMessages messages) {
     }
     error |= uniforms.getNumErrors() != 0;
 
+    // update implicit array sizes across shader stages
+    for (unsigned int i = 0; i < activeStages.size(); ++i) {
+        activeStages[i]->mergeImplicitArraySizes(*infoSink, uniforms);
+        activeStages[i]->getTreeRoot()->traverse(&finalLinkTraverser);
+    }
+
     // copy final definition of global block back into each stage
     for (unsigned int i = 0; i < activeStages.size(); ++i) {
         // We only want to merge into already existing global uniform blocks.
@@ -2106,8 +2136,8 @@ bool TProgram::crossStageCheck(EShMessages messages) {
 
     // compare cross stage symbols for each stage boundary
     for (unsigned int i = 1; i < activeStages.size(); ++i) {
-        activeStages[i - 1]->checkStageIO(*infoSink, *activeStages[i]);
-        error |= (activeStages[i - 1]->getNumErrors() != 0);
+        activeStages[i - 1]->checkStageIO(*infoSink, *activeStages[i], messages);
+        error |= (activeStages[i - 1]->getNumErrors() != 0 || activeStages[i]->getNumErrors() != 0);
     }
 
     // if requested, optimize cross stage IO
@@ -2171,6 +2201,7 @@ bool TProgram::buildReflection(int opts)
 }
 
 unsigned TProgram::getLocalSize(int dim) const                        { return reflection->getLocalSize(dim); }
+unsigned TProgram::getTileShadingRateQCOM(int dim) const              { return reflection->getTileShadingRateQCOM(dim); }
 int TProgram::getReflectionIndex(const char* name) const              { return reflection->getIndex(name); }
 int TProgram::getReflectionPipeIOIndex(const char* name, const bool inOrOut) const
                                                                       { return reflection->getPipeIOIndex(name, inOrOut); }

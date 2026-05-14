@@ -1,4 +1,4 @@
-if(SLANG_EMBED_CORE_MODULE)
+if(TARGET slang-glsl-module)
     set(SLANG_GLSL_MODULE_DEPENDENCY REQUIRES slang-glsl-module)
 else()
     set(SLANG_GLSL_MODULE_DEPENDENCY)
@@ -15,6 +15,8 @@ if(SLANG_ENABLE_SLANGC)
             slang
             Threads::Threads
             ${SLANG_GLSL_MODULE_DEPENDENCY}
+        PRECOMPILE_HEADERS
+            ${slang_SOURCE_DIR}/source/core/slang-basic.h
         INSTALL
         EXPORT_SET_NAME SlangTargets
     )

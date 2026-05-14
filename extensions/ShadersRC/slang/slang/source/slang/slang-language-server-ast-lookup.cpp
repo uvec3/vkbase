@@ -144,6 +144,27 @@ public:
             context->results.add(result);
             return true;
         }
+
+        if (dispatchIfNotNull(expr->value))
+            return true;
+
+        if (dispatchIfNotNull(expr->dataLayout))
+            return true;
+
+        return false;
+    }
+
+    bool visitFloatBitCastExpr(FloatBitCastExpr* expr)
+    {
+        // strlen("__floatAsInt") = 12
+        if (_isLocInRange(context, expr->loc, 12))
+        {
+            ASTLookupResult result;
+            result.path = context->nodePath;
+            result.path.add(expr);
+            context->results.add(result);
+            return true;
+        }
         return dispatchIfNotNull(expr->value);
     }
 
@@ -223,7 +244,7 @@ public:
             if (expr->declRef.getDecl()->hasModifier<ImplicitConversionModifier>())
                 return false;
             Int declLength = 0;
-            if (const auto ctorDecl = as<ConstructorDecl>(expr->declRef.getDecl()))
+            if (const auto ctorDecl = as<ConstructorDecl>(expr->declRef.getDecl()); ctorDecl)
             {
                 auto humaneLoc =
                     context->sourceManager->getHumaneLoc(expr->loc, SourceLocType::Actual);
@@ -502,6 +523,14 @@ public:
         }
         return false;
     }
+    bool visitPackBranchTypeExpr(PackBranchTypeExpr* expr)
+    {
+        if (dispatchIfNotNull(expr->packOperand.exp))
+            return true;
+        if (dispatchIfNotNull(expr->emptyType.exp))
+            return true;
+        return dispatchIfNotNull(expr->nonEmptyType.exp);
+    }
     bool visitTryExpr(TryExpr* expr) { return dispatchIfNotNull(expr->base); }
     bool visitPackExpr(PackExpr* expr)
     {
@@ -537,6 +566,23 @@ public:
         if (reportLookupResultIfInExprLeadingIdentifierRange(expr))
             return true;
         return dispatchIfNotNull(expr->baseExpr);
+    }
+    bool visitPackQueryExpr(PackQueryExpr* expr)
+    {
+        if (reportLookupResultIfInExprLeadingIdentifierRange(expr))
+            return true;
+        return dispatchIfNotNull(expr->value);
+    }
+    bool visitShapePackTransformExpr(ShapePackTransformExpr* expr)
+    {
+        if (reportLookupResultIfInExprLeadingIdentifierRange(expr))
+            return true;
+        for (auto arg : expr->args)
+        {
+            if (dispatchIfNotNull(arg))
+                return true;
+        }
+        return false;
     }
     bool visitHigherOrderInvokeExpr(HigherOrderInvokeExpr* expr)
     {
@@ -685,6 +731,8 @@ struct ASTLookupStmtVisitor : public StmtVisitor<ASTLookupStmtVisitor, bool>
     bool visitGpuForeachStmt(GpuForeachStmt*) { return false; }
 
     bool visitExpressionStmt(ExpressionStmt* stmt) { return checkExpr(stmt->expression); }
+
+    bool visitRequireCapabilityStmt(RequireCapabilityStmt*) { return false; }
 };
 
 bool _findAstNodeImpl(ASTLookupContext& context, SyntaxNode* node)
@@ -833,7 +881,7 @@ bool _findAstNodeImpl(ASTLookupContext& context, SyntaxNode* node)
         if (auto container = as<ContainerDecl>(node))
         {
             bool shouldInspectChildren = true;
-            if (const auto genericDecl = as<GenericDecl>(node))
+            if (const auto genericDecl = as<GenericDecl>(node); genericDecl)
             {
             }
             else if (container->closingSourceLoc.getRaw() >= container->loc.getRaw())

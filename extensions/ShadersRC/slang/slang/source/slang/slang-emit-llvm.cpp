@@ -9,6 +9,7 @@
 #include "slang-ir-lower-buffer-element-type.h"
 #include "slang-ir-util.h"
 #include "slang-llvm/slang-llvm-builder.h"
+#include "slang-rich-diagnostics.h"
 
 using namespace slang;
 
@@ -165,7 +166,6 @@ private:
 
     Dictionary<IRType*, LLVMType*> valueTypeMap;
     Dictionary<IRTypeLayoutRules*, Dictionary<IRType*, LLVMDebugNode*>> debugTypeMap;
-    Dictionary<IRType*, IRType*> legalizedResourceTypeMap;
 
 public:
     LLVMTypeTranslator(
@@ -204,7 +204,7 @@ public:
             return builder->getPointerSizeInBits();
 
         default:
-            SLANG_ASSERT_FAILURE("Unexpected type in getTypeBits!");
+            SLANG_UNIMPLEMENTED_X("Unexpected type in getTypeBits!");
         }
     }
 
@@ -283,8 +283,6 @@ public:
         case kIROp_ArrayType: // Arrays are passed as pointers in SSA values
         case kIROp_UnsizedArrayType:
         case kIROp_StructType: // Structs are passed as pointers in SSA values
-        case kIROp_ConstantBufferType:
-        case kIROp_ParameterBlockType:
         case kIROp_FuncType:
             // LLVM only has opaque pointers now, so everything that lowers as
             // a pointer is just that same opaque pointer.
@@ -299,13 +297,7 @@ public:
                 llvmType = builder->getVectorType(elemCount, elemType);
             }
             break;
-        case kIROp_HLSLStructuredBufferType:
-        case kIROp_HLSLRWStructuredBufferType:
-        case kIROp_HLSLByteAddressBufferType:
-        case kIROp_HLSLRWByteAddressBufferType:
-            llvmType = builder->getBufferType();
-            break;
-        // TODO: Textures, samplers, atomics, TLASes, etc.
+        // TODO: atomics
         default:
             // Matrices and CoopVectors & CoopMatrices are already lowered into
             // something else before this LLVM emitter runs, and won't be
@@ -340,10 +332,8 @@ public:
                 return types.getValue(type);
         }
 
-        auto legalizedType = legalizeResourceTypes(type);
-
         LLVMDebugNode* llvmType = nullptr;
-        switch (legalizedType->getOp())
+        switch (type->getOp())
         {
         case kIROp_VoidType:
             llvmType = builder->getDebugVoidType();
@@ -394,7 +384,7 @@ public:
 
         case kIROp_PtrType:
             {
-                auto ptr = as<IRPtrType>(legalizedType);
+                auto ptr = as<IRPtrType>(type);
                 llvmType = builder->getDebugPointerType(getDebugType(ptr->getValueType(), rules));
             }
             break;
@@ -415,14 +405,14 @@ public:
         case kIROp_BorrowInOutParamType:
         case kIROp_BorrowInParamType:
             {
-                auto ptr = as<IRPtrTypeBase>(legalizedType);
+                auto ptr = as<IRPtrTypeBase>(type);
                 llvmType = builder->getDebugReferenceType(getDebugType(ptr->getValueType(), rules));
             }
             break;
 
         case kIROp_VectorType:
             {
-                auto vecType = static_cast<IRVectorType*>(legalizedType);
+                auto vecType = static_cast<IRVectorType*>(type);
                 auto elemCount = getIntVal(vecType->getElementCount());
                 LLVMDebugNode* elemType = getDebugType(vecType->getElementType(), rules);
                 IRSizeAndAlignment sizeAndAlignment = getSizeAndAlignment(vecType, rules);
@@ -437,7 +427,7 @@ public:
         case kIROp_UnsizedArrayType:
         case kIROp_ArrayType:
             {
-                auto arrayType = static_cast<IRArrayTypeBase*>(legalizedType);
+                auto arrayType = static_cast<IRArrayTypeBase*>(type);
                 LLVMDebugNode* elemType = getDebugType(arrayType->getElementType(), rules);
                 auto irElemCount = arrayType->getElementCount();
                 auto elemCount = irElemCount ? getIntVal(irElemCount) : 0;
@@ -455,7 +445,7 @@ public:
 
         case kIROp_StructType:
             {
-                auto structType = static_cast<IRStructType*>(legalizedType);
+                auto structType = static_cast<IRStructType*>(type);
 
                 IRSizeAndAlignment sizeAndAlignment = getSizeAndAlignment(structType, rules);
 
@@ -489,7 +479,7 @@ public:
                         line));
                 }
                 CharSlice linkageName, prettyName;
-                maybeGetName(&linkageName, &prettyName, legalizedType);
+                maybeGetName(&linkageName, &prettyName, type);
                 sizeAndAlignment.size = align(sizeAndAlignment.size, sizeAndAlignment.alignment);
 
                 llvmType = builder->getDebugStructType(
@@ -503,13 +493,13 @@ public:
             break;
 
         case kIROp_RateQualifiedType:
-            llvmType = getDebugType(as<IRRateQualifiedType>(legalizedType)->getValueType(), rules);
+            llvmType = getDebugType(as<IRRateQualifiedType>(type)->getValueType(), rules);
             break;
 
         default:
             {
                 CharSlice linkageName, prettyName;
-                maybeGetName(&linkageName, &prettyName, legalizedType);
+                maybeGetName(&linkageName, &prettyName, type);
                 llvmType = builder->getDebugFallbackType(prettyName);
             }
             break;
@@ -522,98 +512,12 @@ public:
         return llvmType;
     }
 
-    // Swaps resource buffers in Slang IR to their legalized struct
-    // counterparts.
-    IRType* legalizeResourceTypes(IRType* type)
-    {
-        if (legalizedResourceTypeMap.containsKey(type))
-            return legalizedResourceTypeMap.getValue(type);
-
-        IRBuilder irBuilder(type->getModule());
-
-        IRType* legalizedType = type;
-        switch (type->getOp())
-        {
-        case kIROp_ConstantBufferType:
-        case kIROp_ParameterBlockType:
-            legalizedType = irBuilder.getRawPointerType();
-            break;
-        case kIROp_HLSLStructuredBufferType:
-        case kIROp_HLSLRWStructuredBufferType:
-        case kIROp_HLSLByteAddressBufferType:
-        case kIROp_HLSLRWByteAddressBufferType:
-            {
-                IRStructType* s = irBuilder.createStructType();
-                auto ptrKey = irBuilder.createStructKey();
-                auto sizeKey = irBuilder.createStructKey();
-                irBuilder.createStructField(s, ptrKey, irBuilder.getRawPointerType());
-                irBuilder.createStructField(s, sizeKey, irBuilder.getType(kIROp_UIntPtrType));
-                legalizedType = s;
-            }
-            break;
-        case kIROp_StructType:
-            {
-                auto structType = static_cast<IRStructType*>(type);
-                bool illegal = false;
-                for (auto field : structType->getFields())
-                {
-                    auto fieldType = field->getFieldType();
-                    auto legalizedFieldType = legalizeResourceTypes(fieldType);
-                    if (legalizedFieldType != fieldType)
-                        illegal = true;
-                }
-
-                if (illegal)
-                {
-                    IRStructType* s = irBuilder.createStructType();
-                    for (auto field : structType->getFields())
-                    {
-                        auto fieldType = field->getFieldType();
-                        auto legalizedFieldType = legalizeResourceTypes(fieldType);
-                        irBuilder.createStructField(s, field->getKey(), legalizedFieldType);
-                    }
-                    legalizedType = s;
-                }
-            }
-            break;
-        case kIROp_ArrayType:
-            {
-                auto arrayType = as<IRArrayTypeBase>(type);
-                auto elemType = arrayType->getElementType();
-                auto legalizedElemType = legalizeResourceTypes(elemType);
-                if (elemType != legalizedElemType)
-                    legalizedType =
-                        irBuilder.getArrayType(legalizedElemType, arrayType->getElementCount());
-            }
-            break;
-        default:
-            break;
-        }
-
-        legalizedResourceTypeMap[type] = legalizedType;
-        return legalizedType;
-    }
-
     // Use this instead of the regular Slang::getOffset(), it handles
     // legalized resource types correctly.
     IRIntegerValue getOffset(IRStructField* field, IRTypeLayoutRules* rules)
     {
         IRIntegerValue offset = 0;
-        auto structType = as<IRStructType>(field->getParent());
-        auto legalStructType = as<IRStructType>(legalizeResourceTypes(structType));
-        auto legalField = field;
-        if (legalStructType != structType)
-        {
-            for (auto ff : legalStructType->getFields())
-            {
-                if (ff->getKey() == field->getKey())
-                {
-                    legalField = ff;
-                    break;
-                }
-            }
-        }
-        Slang::getOffset(targetReq, rules, legalField, &offset);
+        Slang::getOffset(targetReq, rules, field, &offset);
         return offset;
     }
 
@@ -622,9 +526,7 @@ public:
     IRSizeAndAlignment getSizeAndAlignment(IRType* type, IRTypeLayoutRules* rules)
     {
         IRSizeAndAlignment sizeAlignment;
-
-        Slang::getSizeAndAlignment(targetReq, rules, legalizeResourceTypes(type), &sizeAlignment);
-
+        Slang::getSizeAndAlignment(targetReq, rules, type, &sizeAlignment);
         return sizeAlignment;
     }
 
@@ -709,9 +611,8 @@ struct LLVMEmitter
     // they're emitted as global variables. Otherwise, we'll try to inline them.
     bool inlineGlobalInstructions = false;
 
-    // These layout rules are used for all data types when they're stored in
-    // memory, EXCEPT when contained within a buffer with an explicit type layout
-    // parameter.
+    // These layout rules are used for pointers using the DefaultDataLayout as
+    // well as stack variables.
     IRTypeLayoutRules* defaultPointerRules = nullptr;
 
     // The LLVM value class is closest to Slang's IRInst, as it can represent
@@ -781,11 +682,9 @@ struct LLVMEmitter
         ISlangSharedLibrary* library = codeGenContext->getSession()->getOrLoadSlangLLVM();
         if (!library)
         {
-            codeGenContext->getSink()->diagnose(
-                SourceLoc(),
-                Diagnostics::unableToGenerateCodeForTarget,
-                TypeTextUtil::getCompileTargetName(
-                    SlangCompileTarget(codeGenContext->getTargetFormat())));
+            codeGenContext->getSink()->diagnose(Diagnostics::UnableToGenerateCodeForTarget{
+                .target = TypeTextUtil::getCompileTargetName(
+                    SlangCompileTarget(codeGenContext->getTargetFormat()))});
             return SLANG_FAIL;
         }
 
@@ -853,15 +752,6 @@ struct LLVMEmitter
         }
 
         debug = getOptions().getDebugInfoLevel() != DebugInfoLevel::None;
-
-        if (getOptions().shouldUseCLayout())
-            defaultPointerRules = IRTypeLayoutRules::get(IRTypeLayoutRuleName::C);
-        else if (getOptions().shouldUseScalarLayout())
-            defaultPointerRules = IRTypeLayoutRules::get(IRTypeLayoutRuleName::Scalar);
-        else if (getOptions().shouldUseDXLayout())
-            defaultPointerRules = IRTypeLayoutRules::get(IRTypeLayoutRuleName::D3DConstantBuffer);
-        else
-            defaultPointerRules = IRTypeLayoutRules::get(IRTypeLayoutRuleName::LLVM);
 
         types.reset(
             new LLVMTypeTranslator(builder, codeGenContext->getTargetReq(), instToDebugLLVM));
@@ -1199,9 +1089,9 @@ struct LLVMEmitter
 
     // Allocates stack memory for given type. Returns a pointer to the start of
     // that memory.
-    LLVMInst* emitStackVariable(IRType* type, IRTypeLayoutRules* rules)
+    LLVMInst* emitStackVariable(IRType* type)
     {
-        IRSizeAndAlignment sizeAlignment = types->getSizeAndAlignment(type, rules);
+        IRSizeAndAlignment sizeAlignment = types->getSizeAndAlignment(type, defaultPointerRules);
 
         // All allocas should occur in the first block:
         // https://llvm.org/docs/Frontend/PerformanceTips.html#use-of-allocas
@@ -1400,7 +1290,7 @@ struct LLVMEmitter
             if (rules == defaultPointerRules)
             {
                 // Equal memory layout, so we can just memcpy.
-                LLVMInst* llvmVar = emitStackVariable(valType, defaultPointerRules);
+                LLVMInst* llvmVar = emitStackVariable(valType);
 
                 // Pointer-to-pointer copy, so generate inline memcpy.
                 builder->emitCopy(
@@ -1414,7 +1304,7 @@ struct LLVMEmitter
             }
             else
             {
-                LLVMInst* llvmVar = emitStackVariable(valType, defaultPointerRules);
+                LLVMInst* llvmVar = emitStackVariable(valType);
                 crossLayoutMemCpy(
                     llvmVar,
                     llvmPtr,
@@ -1555,44 +1445,9 @@ struct LLVMEmitter
         return getTypeLayoutRuleForBuffer(codeGenContext->getTargetProgram(), bufferType);
     }
 
-    // Tries to find which layout rules apply to the given pointer, based on
-    // "provenance": we track the pointer to where we got it and check if the
-    // source is a buffer with a specific layout.
-    IRTypeLayoutRules* getPtrLayoutRules(IRInst* ptr)
-    {
-        // Check if the pointer is actually based on an buffer with an explicit
-        // layout. If so, we need to take that layout into account.
-        if (auto structuredBufferInst = as<IRRWStructuredBufferGetElementPtr>(ptr))
-        {
-            auto baseType = cast<IRHLSLStructuredBufferTypeBase>(
-                structuredBufferInst->getBase()->getDataType());
-            return getBufferLayoutRules(baseType);
-        }
-        else if (auto cbufType = as<IRConstantBufferType>(ptr->getDataType()))
-        {
-            return getBufferLayoutRules(cbufType);
-        }
-        else if (auto gep = as<IRGetElementPtr>(ptr))
-        {
-            // Transitive
-            return getPtrLayoutRules(gep->getBase());
-        }
-        else if (auto off = as<IRGetOffsetPtr>(ptr))
-        {
-            // Transitive
-            return getPtrLayoutRules(off->getBase());
-        }
-        else if (auto fieldAddr = as<IRFieldAddress>(ptr))
-        {
-            // Transitive
-            return getPtrLayoutRules(fieldAddr->getBase());
-        }
-        return defaultPointerRules;
-    }
-
     static LLVMInst* _defaultOnReturnHandler(IRReturn*)
     {
-        SLANG_ASSERT_FAILURE("Unexpected terminator in global scope!");
+        SLANG_UNIMPLEMENTED_X("Unexpected terminator in global scope!");
     }
 
     // Caution! This is only for emitting things which are considered
@@ -1662,7 +1517,7 @@ struct LLVMEmitter
                 auto var = static_cast<IRVar*>(inst);
                 auto ptrType = var->getDataType();
 
-                LLVMInst* llvmVar = emitStackVariable(ptrType->getValueType(), defaultPointerRules);
+                LLVMInst* llvmVar = emitStackVariable(ptrType->getValueType());
 
                 CharSlice linkageName, prettyName;
                 if (maybeGetName(&linkageName, &prettyName, inst))
@@ -1753,7 +1608,7 @@ struct LLVMEmitter
                     findValue(ptr),
                     findValue(val),
                     val->getDataType(),
-                    getPtrLayoutRules(ptr),
+                    getBufferLayoutRules(ptr->getDataType()),
                     isPtrVolatile(ptr));
             }
             break;
@@ -1766,7 +1621,7 @@ struct LLVMEmitter
                 llvmInst = emitLoad(
                     findValue(ptr),
                     loadInst->getDataType(),
-                    getPtrLayoutRules(ptr),
+                    getBufferLayoutRules(ptr->getDataType()),
                     isPtrVolatile(ptr));
             }
             break;
@@ -1779,7 +1634,7 @@ struct LLVMEmitter
                 {
                     // Aggregates are always stack-allocated; we need to give a
                     // valid pointer even if the value is undefined.
-                    llvmInst = emitStackVariable(type, defaultPointerRules);
+                    llvmInst = emitStackVariable(type);
                 }
                 else
                 {
@@ -1805,7 +1660,7 @@ struct LLVMEmitter
             break;
 
         case kIROp_MakeArray:
-            llvmInst = emitStackVariable(inst->getDataType(), defaultPointerRules);
+            llvmInst = emitStackVariable(inst->getDataType());
             for (UInt aa = 0; aa < inst->getOperandCount(); ++aa)
             {
                 auto op = inst->getOperand(aa);
@@ -1821,7 +1676,7 @@ struct LLVMEmitter
         case kIROp_MakeStruct:
             {
                 IRStructType* type = as<IRStructType>(inst->getDataType());
-                llvmInst = emitStackVariable(type, defaultPointerRules);
+                llvmInst = emitStackVariable(type);
                 auto field = type->getFields().begin();
                 for (UInt aa = 0; aa < inst->getOperandCount(); ++aa, ++field)
                 {
@@ -1836,7 +1691,7 @@ struct LLVMEmitter
             {
                 auto arrayType = cast<IRArrayType>(inst->getDataType());
                 auto elementCount = getIntVal(arrayType->getElementCount());
-                llvmInst = emitStackVariable(inst->getDataType(), defaultPointerRules);
+                llvmInst = emitStackVariable(inst->getDataType());
                 auto element = inst->getOperand(0);
                 auto llvmElement = findValue(element);
                 for (IRIntegerValue i = 0; i < elementCount; ++i)
@@ -1965,7 +1820,7 @@ struct LLVMEmitter
 
                 auto dstType = as<IRPtrTypeBase>(dst->getDataType())->getValueType();
 
-                IRTypeLayoutRules* rules = getPtrLayoutRules(dst);
+                IRTypeLayoutRules* rules = getBufferLayoutRules(dst->getDataType());
 
                 IRType* elementType = as<IRVectorType>(dstType)->getElementType();
 
@@ -2037,7 +1892,7 @@ struct LLVMEmitter
                     baseStructType = as<IRStructType>(ptrType->getValueType());
                 }
 
-                auto rules = getPtrLayoutRules(base);
+                auto rules = getBufferLayoutRules(base->getDataType());
                 auto field = findStructField(baseStructType, key);
                 auto llvmBase = findValue(base);
 
@@ -2057,15 +1912,12 @@ struct LLVMEmitter
                     return nullptr;
                 }
 
-                auto rules = getPtrLayoutRules(base);
-
                 auto llvmBase = findValue(base);
                 auto key = as<IRStructKey>(fieldExtractInst->getField());
                 auto field = findStructField(structType, key);
 
-                LLVMInst* ptr = emitStructGetElementPtr(llvmBase, field, rules);
-
-                llvmInst = emitLoad(ptr, field->getFieldType(), rules);
+                LLVMInst* ptr = emitStructGetElementPtr(llvmBase, field, defaultPointerRules);
+                llvmInst = emitLoad(ptr, field->getFieldType(), defaultPointerRules);
             }
             break;
 
@@ -2092,7 +1944,7 @@ struct LLVMEmitter
                     findValue(baseInst),
                     findValue(indexInst),
                     baseType,
-                    getPtrLayoutRules(baseInst));
+                    getBufferLayoutRules(baseInst->getDataType()));
             }
             break;
 
@@ -2128,7 +1980,7 @@ struct LLVMEmitter
                     findValue(baseInst),
                     findValue(indexInst),
                     elemType,
-                    getPtrLayoutRules(baseInst));
+                    getBufferLayoutRules(baseInst->getDataType()));
             }
             break;
 
@@ -2155,11 +2007,13 @@ struct LLVMEmitter
                 else if (auto arrayType = as<IRArrayTypeBase>(baseTy))
                 {
                     // emitGEP + emitLoad.
-                    auto rules = getPtrLayoutRules(baseInst);
                     auto elemType = arrayType->getElementType();
-                    LLVMInst* ptr =
-                        emitArrayGetElementPtr(llvmVal, findValue(indexInst), elemType, rules);
-                    llvmInst = emitLoad(ptr, elemType, rules);
+                    LLVMInst* ptr = emitArrayGetElementPtr(
+                        llvmVal,
+                        findValue(indexInst),
+                        elemType,
+                        defaultPointerRules);
+                    llvmInst = emitLoad(ptr, elemType, defaultPointerRules);
                 }
                 else
                     SLANG_ASSERT_FAILURE("Unknown data type for GetElement!");
@@ -2220,7 +2074,7 @@ struct LLVMEmitter
                 // output parameter that is passed with a pointer.
                 if (types->isAggregateType(inst->getDataType()))
                 {
-                    allocValue = emitStackVariable(inst->getDataType(), defaultPointerRules);
+                    allocValue = emitStackVariable(inst->getDataType());
                     args.add(allocValue);
                 }
                 auto returnVal =
@@ -2258,127 +2112,6 @@ struct LLVMEmitter
             }
             break;
 
-        case kIROp_RWStructuredBufferGetElementPtr:
-            {
-                auto gepInst = static_cast<IRRWStructuredBufferGetElementPtr*>(inst);
-
-                auto baseType =
-                    cast<IRHLSLRWStructuredBufferType>(gepInst->getBase()->getDataType());
-                auto llvmBase = findValue(gepInst->getBase());
-                auto llvmIndex = findValue(gepInst->getIndex());
-
-                auto llvmPtr = builder->emitGetBufferPtr(llvmBase);
-
-                IRTypeLayoutRules* rules = getBufferLayoutRules(baseType);
-                llvmInst =
-                    emitArrayGetElementPtr(llvmPtr, llvmIndex, baseType->getElementType(), rules);
-            }
-            break;
-
-        case kIROp_StructuredBufferLoad:
-        case kIROp_RWStructuredBufferLoad:
-            {
-                auto base = inst->getOperand(0);
-                auto llvmBase = findValue(base);
-                auto llvmIndex = findValue(inst->getOperand(1));
-
-                auto baseType = cast<IRHLSLStructuredBufferTypeBase>(base->getDataType());
-
-                auto llvmBasePtr = builder->emitGetBufferPtr(llvmBase);
-                IRTypeLayoutRules* rules = getBufferLayoutRules(baseType);
-
-                auto llvmPtr = emitArrayGetElementPtr(
-                    llvmBasePtr,
-                    llvmIndex,
-                    baseType->getElementType(),
-                    rules);
-                llvmInst = emitLoad(llvmPtr, inst->getDataType(), rules);
-            }
-            break;
-
-        case kIROp_RWStructuredBufferStore:
-            {
-                auto base = inst->getOperand(0);
-                auto llvmBase = findValue(base);
-                auto llvmIndex = findValue(inst->getOperand(1));
-                auto val = inst->getOperand(2);
-
-                auto baseType = cast<IRHLSLStructuredBufferTypeBase>(base->getDataType());
-
-                auto llvmBasePtr = builder->emitGetBufferPtr(llvmBase);
-                IRTypeLayoutRules* rules = getBufferLayoutRules(baseType);
-
-                auto llvmPtr = emitArrayGetElementPtr(
-                    llvmBasePtr,
-                    llvmIndex,
-                    baseType->getElementType(),
-                    rules);
-                llvmInst = emitStore(llvmPtr, findValue(val), val->getDataType(), rules);
-            }
-            break;
-
-        case kIROp_ByteAddressBufferLoad:
-            {
-                auto llvmBase = findValue(inst->getOperand(0));
-                auto llvmIndex = findValue(inst->getOperand(1));
-
-                auto llvmBasePtr = builder->emitGetBufferPtr(llvmBase);
-                auto llvmPtr = builder->emitGetElementPtr(llvmBasePtr, 1, llvmIndex);
-
-                llvmInst = emitLoad(llvmPtr, inst->getDataType(), defaultPointerRules);
-            }
-            break;
-
-        case kIROp_ByteAddressBufferStore:
-            {
-                auto llvmBase = findValue(inst->getOperand(0));
-                auto llvmIndex = findValue(inst->getOperand(1));
-
-                auto llvmBasePtr = builder->emitGetBufferPtr(llvmBase);
-                auto llvmPtr = builder->emitGetElementPtr(llvmBasePtr, 1, llvmIndex);
-                auto val = inst->getOperand(inst->getOperandCount() - 1);
-                llvmInst =
-                    emitStore(llvmPtr, findValue(val), val->getDataType(), defaultPointerRules);
-            }
-            break;
-
-        case kIROp_StructuredBufferGetDimensions:
-            {
-                auto getDimensionsInst = cast<IRStructuredBufferGetDimensions>(inst);
-                auto buffer = getDimensionsInst->getBuffer();
-                auto bufferType = as<IRHLSLStructuredBufferTypeBase>(buffer->getDataType());
-                auto llvmBuffer = findValue(buffer);
-
-                IRTypeLayoutRules* layout = getBufferLayoutRules(bufferType);
-
-                auto llvmBaseCount = builder->emitGetBufferSize(llvmBuffer);
-                llvmBaseCount = builder->emitCast(llvmBaseCount, int32Type, false, false);
-
-                auto returnType = builder->getVectorType(2, int32Type);
-                llvmInst = builder->getPoison(returnType);
-                llvmInst = builder->emitInsertElement(
-                    llvmInst,
-                    llvmBaseCount,
-                    builder->getConstantInt(int32Type, 0));
-
-                auto stride = types->getSizeAndAlignment(bufferType->getElementType(), layout).size;
-                llvmInst = builder->emitInsertElement(
-                    llvmInst,
-                    builder->getConstantInt(int32Type, stride),
-                    builder->getConstantInt(int32Type, 1));
-            }
-            break;
-
-        case kIROp_GetEquivalentStructuredBuffer:
-            {
-                auto bufferType = as<IRHLSLStructuredBufferTypeBase>(inst->getDataType());
-                auto llvmByteBuffer = findValue(inst->getOperand(0));
-                IRTypeLayoutRules* layout = getBufferLayoutRules(bufferType);
-                auto stride = types->getSizeAndAlignment(bufferType->getElementType(), layout).size;
-                llvmInst = builder->emitChangeBufferStride(llvmByteBuffer, 1, stride);
-            }
-            break;
-
         case kIROp_MissingReturn:
         case kIROp_Unreachable:
             return builder->emitUnreachable();
@@ -2404,10 +2137,9 @@ struct LLVMEmitter
                     // slang-rt or in core module. Ideally, if built-in hashing
                     // support in the core module becomes a thing, that can be
                     // used for this too.
-                    getSink()->diagnose(
-                        inst,
-                        Diagnostics::unimplemented,
-                        "unexpected string hash for non-literal string");
+                    getSink()->diagnose(Diagnostics::Unimplemented{
+                        .feature = "unexpected string hash for non-literal string",
+                        .location = inst->sourceLoc});
                 }
             }
             break;
@@ -3119,6 +2851,13 @@ struct LLVMEmitter
 
     void processModule(IRModule* irModule)
     {
+        {
+            IRBuilder irBuilder(irModule);
+            defaultPointerRules = getTypeLayoutRuleForBuffer(
+                codeGenContext->getTargetProgram(),
+                irBuilder.getPtrType(irBuilder.getVoidType()));
+        }
+
         emitGlobalDebugInfo(irModule);
         emitGlobalDeclarations(irModule);
         emitGlobalFunctions(irModule);

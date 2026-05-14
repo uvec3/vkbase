@@ -3401,6 +3401,132 @@ OpEntryPoint Vertex %func "main"
                         "in any stage other than compute or fragment"));
 }
 
+TEST_F(ValidateCapability, ColorAttachmentReadEXTRequireCapability) {
+  const std::string spirv = R"(
+OpCapability Shader
+OpCapability StorageImageReadWithoutFormat
+OpExtension "SPV_EXT_shader_tile_image"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main"
+OpExecutionMode %main OriginUpperLeft
+%void = OpTypeVoid
+%voidfn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%img_type_f32 = OpTypeImage %f32 2D 0 0 0 1 Rgba32f
+%ptr_image_f32 = OpTypePointer UniformConstant %img_type_f32
+%uniform_image_f32 = OpVariable %ptr_image_f32 UniformConstant
+%main = OpFunction %void None %voidfn
+%entry = OpLabel
+%img = OpLoad %img_type_f32 %uniform_image_f32
+%res1 = OpColorAttachmentReadEXT %f32 %img
+OpReturn
+OpFunctionEnd
+)";
+
+  CompileSuccessfully(spirv, SPV_ENV_UNIVERSAL_1_5);
+  EXPECT_EQ(SPV_ERROR_INVALID_CAPABILITY,
+            ValidateInstructions(SPV_ENV_UNIVERSAL_1_5));
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("Opcode ColorAttachmentReadEXT requires one of these "
+                        "capabilities: TileImageColorReadAccessEXT"));
+}
+
+TEST_F(ValidateCapability, DepthAttachmentReadEXTRequireCapability) {
+  const std::string spirv = R"(
+OpCapability Shader
+OpExtension "SPV_EXT_shader_tile_image"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main"
+OpExecutionMode %main OriginUpperLeft
+%void = OpTypeVoid
+%voidfn = OpTypeFunction %void
+%f32 = OpTypeFloat 32
+%main = OpFunction %void None %voidfn
+%entry = OpLabel
+%res1 = OpDepthAttachmentReadEXT %f32
+OpReturn
+OpFunctionEnd
+)";
+
+  CompileSuccessfully(spirv, SPV_ENV_UNIVERSAL_1_5);
+  EXPECT_EQ(SPV_ERROR_INVALID_CAPABILITY,
+            ValidateInstructions(SPV_ENV_UNIVERSAL_1_5));
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("Opcode DepthAttachmentReadEXT requires one of these "
+                        "capabilities: TileImageDepthReadAccessEXT"));
+}
+
+TEST_F(ValidateCapability, StencilAttachmentReadEXTRequireCapability) {
+  const std::string spirv = R"(
+OpCapability Shader
+OpExtension "SPV_EXT_shader_tile_image"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Fragment %main "main"
+OpExecutionMode %main OriginUpperLeft
+%void = OpTypeVoid
+%voidfn = OpTypeFunction %void
+%u32 = OpTypeInt 32 0
+%main = OpFunction %void None %voidfn
+%entry = OpLabel
+%res1 = OpStencilAttachmentReadEXT %u32
+OpReturn
+OpFunctionEnd
+)";
+
+  CompileSuccessfully(spirv, SPV_ENV_UNIVERSAL_1_5);
+  EXPECT_EQ(SPV_ERROR_INVALID_CAPABILITY,
+            ValidateInstructions(SPV_ENV_UNIVERSAL_1_5));
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("Opcode StencilAttachmentReadEXT requires one of these "
+                        "capabilities: TileImageStencilReadAccessEXT"));
+}
+
+// https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/11860#issuecomment-4047435834
+TEST_F(ValidateCapability, InputAttachmentArrayDynamicIndexingVulkan12) {
+  const std::string spirv = R"(
+               OpCapability Shader
+               OpCapability InputAttachment
+               OpCapability InputAttachmentArrayDynamicIndexing
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %main "main" %color %xs
+               OpExecutionMode %main OriginUpperLeft
+               OpDecorate %color Location 0
+               OpDecorate %xs Binding 0
+               OpDecorate %xs DescriptorSet 0
+               OpDecorate %xs InputAttachmentIndex 0
+               OpDecorate %index SpecId 0
+       %void = OpTypeVoid
+          %4 = OpTypeFunction %void
+      %float = OpTypeFloat 32
+    %v4float = OpTypeVector %float 4
+%_ptr_Output_v4float = OpTypePointer Output %v4float
+      %color = OpVariable %_ptr_Output_v4float Output
+         %11 = OpTypeImage %float SubpassData 0 0 0 2 Unknown
+       %uint = OpTypeInt 32 0
+     %uint_4 = OpConstant %uint 4
+%_arr_11_uint_4 = OpTypeArray %11 %uint_4
+%_ptr_UniformConstant__arr_11_uint_4 = OpTypePointer UniformConstant %_arr_11_uint_4
+         %xs = OpVariable %_ptr_UniformConstant__arr_11_uint_4 UniformConstant
+        %int = OpTypeInt 32 1
+      %index = OpSpecConstant %int 3
+%_ptr_UniformConstant_11 = OpTypePointer UniformConstant %11
+      %int_0 = OpConstant %int 0
+      %v2int = OpTypeVector %int 2
+         %24 = OpConstantComposite %v2int %int_0 %int_0
+       %main = OpFunction %void None %4
+          %6 = OpLabel
+         %20 = OpAccessChain %_ptr_UniformConstant_11 %xs %index
+         %21 = OpLoad %11 %20
+         %25 = OpImageRead %v4float %21 %24
+               OpStore %color %25
+               OpReturn
+               OpFunctionEnd
+)";
+
+  CompileSuccessfully(spirv, SPV_ENV_VULKAN_1_2);
+  EXPECT_EQ(SPV_SUCCESS, ValidateInstructions(SPV_ENV_VULKAN_1_2));
+}
+
 }  // namespace
 }  // namespace val
 }  // namespace spvtools

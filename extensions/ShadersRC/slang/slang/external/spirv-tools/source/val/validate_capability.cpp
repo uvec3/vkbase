@@ -147,6 +147,7 @@ bool IsSupportOptionalVulkan_1_0(uint32_t capability) {
     case spv::Capability::Int8:
     case spv::Capability::BFloat16TypeKHR:
     case spv::Capability::Float8EXT:
+    case spv::Capability::PushConstantBanksNV:
       return true;
     default:
       break;
@@ -211,6 +212,8 @@ bool IsSupportOptionalVulkan_1_2(uint32_t capability) {
     case spv::Capability::InputAttachmentArrayNonUniformIndexing:
     case spv::Capability::UniformTexelBufferArrayNonUniformIndexing:
     case spv::Capability::StorageTexelBufferArrayNonUniformIndexing:
+    case spv::Capability::InputAttachmentArrayDynamicIndexing:
+    case spv::Capability::ShaderNonUniform:
       return true;
     default:
       break;

@@ -50,7 +50,9 @@ OpCapability ImageGatherExtended
 OpCapability MinLod
 OpCapability Sampled1D
 OpCapability ImageQuery
+OpCapability Int16
 OpCapability Int64
+OpCapability Float16
 OpCapability Float64
 OpCapability SparseResidency
 OpCapability ImageBuffer
@@ -83,7 +85,7 @@ OpCapability ImageBuffer
 %uniform_sampler
 %private_image_u32_buffer_0002_r32ui
 %private_image_u32_spd_0002
-%private_image_f32_buffer_0002_r32ui
+%private_image_f32_buffer_0002_r32f
 %input_flat_u32
 )";
 
@@ -139,12 +141,15 @@ OpDecorate %input_flat_u32 Location 0
 %void = OpTypeVoid
 %func = OpTypeFunction %void
 %bool = OpTypeBool
+%f16 = OpTypeFloat 16
 %f32 = OpTypeFloat 32
 %f64 = OpTypeFloat 64
+%u16 = OpTypeInt 16 0
 %u32 = OpTypeInt 32 0
 %s32 = OpTypeInt 32 1
 %u64 = OpTypeInt 64 0
 %s64 = OpTypeInt 64 1
+%f16vec2 = OpTypeVector %f16 2
 %s32vec2 = OpTypeVector %s32 2
 %u32vec2 = OpTypeVector %u32 2
 %f32vec2 = OpTypeVector %f32 2
@@ -155,6 +160,8 @@ OpDecorate %input_flat_u32 Location 0
 %s32vec4 = OpTypeVector %s32 4
 %f32vec4 = OpTypeVector %f32 4
 %boolvec4 = OpTypeVector %bool 4
+
+%f16_0 = OpConstant %f16 0
 
 %f32_0 = OpConstant %f32 0
 %f32_1 = OpConstant %f32 1
@@ -172,6 +179,8 @@ OpDecorate %input_flat_u32 Location 0
 %s32_4 = OpConstant %s32 4
 %s32_m1 = OpConstant %s32 -1
 
+%u16_0 = OpConstant %u16 0
+
 %u32_0 = OpConstant %u32 0
 %u32_1 = OpConstant %u32 1
 %u32_2 = OpConstant %u32 2
@@ -187,6 +196,7 @@ OpDecorate %input_flat_u32 Location 0
 %u32vec2arr3 = OpTypeArray %u32vec2 %u32_3
 %u32arr4 = OpTypeArray %u32 %u32_4
 %u32vec3arr4 = OpTypeArray %u32vec3 %u32_4
+%f16vec2arr4 = OpTypeArray %f16vec2 %u32_4
 
 %struct_u32_f32vec4 = OpTypeStruct %u32 %f32vec4
 %struct_u64_f32vec4 = OpTypeStruct %u64 %f32vec4
@@ -200,6 +210,7 @@ OpDecorate %input_flat_u32 Location 0
 %struct_u32_f32vec4_u32 = OpTypeStruct %u32 %f32vec4 %u32
 %struct_u32_u32arr4 = OpTypeStruct %u32 %u32arr4
 
+%u32vec2_00 = OpConstantComposite %u32vec2 %u32_0 %u32_0
 %u32vec2_01 = OpConstantComposite %u32vec2 %u32_0 %u32_1
 %u32vec2_12 = OpConstantComposite %u32vec2 %u32_1 %u32_2
 %u32vec3_012 = OpConstantComposite %u32vec3 %u32_0 %u32_1 %u32_2
@@ -213,6 +224,8 @@ OpDecorate %input_flat_u32 Location 0
 %s32vec3_123 = OpConstantComposite %s32vec3 %s32_1 %s32_2 %s32_3
 %s32vec4_0123 = OpConstantComposite %s32vec4 %s32_0 %s32_1 %s32_2 %s32_3
 %s32vec4_1234 = OpConstantComposite %s32vec4 %s32_1 %s32_2 %s32_3 %s32_4
+
+%f16vec2_00 = OpConstantComposite %f16vec2 %f16_0 %f16_0
 
 %f32vec2_00 = OpConstantComposite %f32vec2 %f32_0 %f32_0
 %f32vec2_01 = OpConstantComposite %f32vec2 %f32_0 %f32_1
@@ -231,6 +244,7 @@ OpDecorate %input_flat_u32 Location 0
 %const_offsets3x2 = OpConstantComposite %u32vec2arr3 %u32vec2_01 %u32vec2_12 %u32vec2_01
 %const_offsets4xu = OpConstantComposite %u32arr4 %u32_0 %u32_0 %u32_0 %u32_0
 %const_offsets4x3 = OpConstantComposite %u32vec3arr4 %u32vec3_012 %u32vec3_012 %u32vec3_012 %u32vec3_012
+%const_offsets4f16 = OpConstantComposite %f16vec2arr4 %f16vec2_00 %f16vec2_00 %f16vec2_00 %f16vec2_00
 
 %type_image_f32_1d_0001 = OpTypeImage %f32 1D 0 0 0 1 Unknown
 %ptr_image_f32_1d_0001 = OpTypePointer UniformConstant %type_image_f32_1d_0001
@@ -316,10 +330,10 @@ OpDecorate %input_flat_u32 Location 0
 %ptr_image_u32_spd_0002 = OpTypePointer Private %type_image_u32_spd_0002
 %private_image_u32_spd_0002 = OpVariable %ptr_image_u32_spd_0002 Private
 
-%type_image_f32_buffer_0002_r32ui = OpTypeImage %f32 Buffer 0 0 0 2 R32ui
+%type_image_f32_buffer_0002_r32f = OpTypeImage %f32 Buffer 0 0 0 2 R32f
 %ptr_Image_f32 = OpTypePointer Image %f32
-%ptr_image_f32_buffer_0002_r32ui = OpTypePointer Private %type_image_f32_buffer_0002_r32ui
-%private_image_f32_buffer_0002_r32ui = OpVariable %ptr_image_f32_buffer_0002_r32ui Private
+%ptr_image_f32_buffer_0002_r32f = OpTypePointer Private %type_image_f32_buffer_0002_r32f
+%private_image_f32_buffer_0002_r32f = OpVariable %ptr_image_f32_buffer_0002_r32f Private
 
 %ptr_input_flat_u32 = OpTypePointer Input %u32
 %input_flat_u32 = OpVariable %ptr_input_flat_u32 Input
@@ -372,6 +386,7 @@ OpCapability ImageQuery
 OpCapability ImageGatherExtended
 OpCapability InputAttachment
 OpCapability SampledRect
+OpCapability Int16
 )";
 
   ss << capabilities_and_extensions;
@@ -381,6 +396,7 @@ OpMemoryModel Physical32 OpenCL
 %func = OpTypeFunction %void
 %bool = OpTypeBool
 %f32 = OpTypeFloat 32
+%u16 = OpTypeInt 16 0
 %u32 = OpTypeInt 32 0
 %u32vec2 = OpTypeVector %u32 2
 %f32vec2 = OpTypeVector %f32 2
@@ -394,6 +410,8 @@ OpMemoryModel Physical32 OpenCL
 %f32_0_5 = OpConstant %f32 0.5
 %f32_0_25 = OpConstant %f32 0.25
 %f32_0_75 = OpConstant %f32 0.75
+
+%u16_0 = OpConstant %u16 0
 
 %u32_0 = OpConstant %u32 0
 %u32_1 = OpConstant %u32 1
@@ -1079,6 +1097,258 @@ OpExtension "SPV_EXT_shader_tile_image"
           "Image Dim TileImageDataEXT cannot be used with ImageSparseRead"));
 }
 
+TEST_F(ValidateImage, ColorAttachmentReadEXTWrongResultType) {
+  const std::string body = R"(
+%img = OpLoad %type_image_f32_tid_0002 %uniform_image_f32_tid_0002
+%res1 = OpColorAttachmentReadEXT %bool %img
+)";
+
+  const std::string decl = R"(
+%type_image_f32_tid_0002 = OpTypeImage %f32 TileImageDataEXT 0 0 0 2 Unknown
+%ptr_image_f32_tid_0002 = OpTypePointer UniformConstant %type_image_f32_tid_0002
+%uniform_image_f32_tid_0002 = OpVariable %ptr_image_f32_tid_0002 UniformConstant
+)";
+
+  const std::string extra = R"(
+OpCapability StorageImageReadWithoutFormat
+OpCapability TileImageColorReadAccessEXT
+OpExtension "SPV_EXT_shader_tile_image"
+)";
+
+  CompileSuccessfully(GenerateShaderCode(body, extra, "Fragment", "",
+                                         SPV_ENV_UNIVERSAL_1_5, "GLSL450", decl)
+                          .c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr(
+          "Expected Result Type to be int or float scalar or vector type"));
+}
+
+TEST_F(ValidateImage, ColorAttachmentReadEXTWrongSampledType) {
+  const std::string body = R"(
+%img = OpLoad %type_image_f32_tid_0002 %uniform_image_f32_tid_0002
+%res1 = OpColorAttachmentReadEXT %f64 %img
+)";
+
+  const std::string decl = R"(
+%type_image_f32_tid_0002 = OpTypeImage %f32 TileImageDataEXT 0 0 0 2 Unknown
+%ptr_image_f32_tid_0002 = OpTypePointer UniformConstant %type_image_f32_tid_0002
+%uniform_image_f32_tid_0002 = OpVariable %ptr_image_f32_tid_0002 UniformConstant
+)";
+
+  const std::string extra = R"(
+OpCapability StorageImageReadWithoutFormat
+OpCapability TileImageColorReadAccessEXT
+OpExtension "SPV_EXT_shader_tile_image"
+)";
+
+  CompileSuccessfully(GenerateShaderCode(body, extra, "Fragment", "",
+                                         SPV_ENV_UNIVERSAL_1_5, "GLSL450", decl)
+                          .c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("Expected Image 'Sampled Type' to be the same as "
+                        "Result Type components"));
+}
+
+TEST_F(ValidateImage, ColorAttachmentReadEXTWrongAttachment) {
+  const std::string body = R"(
+%img = OpLoad %type_image_f32_2d_0002 %uniform_image_f32_0002
+%res1 = OpColorAttachmentReadEXT %f32 %img
+)";
+
+  const std::string decl = R"(
+%ptr_image_f32_0002 = OpTypePointer UniformConstant %type_image_f32_2d_0002
+%uniform_image_f32_0002 = OpVariable %ptr_image_f32_0002 UniformConstant
+)";
+
+  const std::string extra = R"(
+OpCapability StorageImageReadWithoutFormat
+OpCapability TileImageColorReadAccessEXT
+OpExtension "SPV_EXT_shader_tile_image"
+)";
+
+  CompileSuccessfully(GenerateShaderCode(body, extra, "Fragment", "",
+                                         SPV_ENV_UNIVERSAL_1_5, "GLSL450", decl)
+                          .c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("Image 'Dim' must be TileImageDataEXT"));
+}
+
+TEST_F(ValidateImage, ColorAttachmentReadEXTWrongSample) {
+  const std::string body = R"(
+%img = OpLoad %type_image_f32_tid_0002 %uniform_image_f32_tid_0002
+%res1 = OpColorAttachmentReadEXT %f32 %img %f32_0
+)";
+
+  const std::string decl = R"(
+%type_image_f32_tid_0002 = OpTypeImage %f32 TileImageDataEXT 0 0 0 2 Unknown
+%ptr_image_f32_tid_0002 = OpTypePointer UniformConstant %type_image_f32_tid_0002
+%uniform_image_f32_tid_0002 = OpVariable %ptr_image_f32_tid_0002 UniformConstant
+)";
+
+  const std::string extra = R"(
+OpCapability StorageImageReadWithoutFormat
+OpCapability TileImageColorReadAccessEXT
+OpExtension "SPV_EXT_shader_tile_image"
+)";
+
+  CompileSuccessfully(GenerateShaderCode(body, extra, "Fragment", "",
+                                         SPV_ENV_UNIVERSAL_1_5, "GLSL450", decl)
+                          .c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("Expected Sample to be a 32-bit int scalar"));
+}
+
+TEST_F(ValidateImage, ColorAttachmentReadEXTWrongExecutionModel) {
+  const std::string body = R"(
+%img = OpLoad %type_image_f32_tid_0002 %uniform_image_f32_tid_0002
+%res1 = OpColorAttachmentReadEXT %f32 %img
+)";
+
+  const std::string decl = R"(
+%type_image_f32_tid_0002 = OpTypeImage %f32 TileImageDataEXT 0 0 0 2 Unknown
+%ptr_image_f32_tid_0002 = OpTypePointer UniformConstant %type_image_f32_tid_0002
+%uniform_image_f32_tid_0002 = OpVariable %ptr_image_f32_tid_0002 UniformConstant
+)";
+
+  const std::string extra = R"(
+OpCapability StorageImageReadWithoutFormat
+OpCapability TileImageColorReadAccessEXT
+OpExtension "SPV_EXT_shader_tile_image"
+)";
+
+  CompileSuccessfully(GenerateShaderCode(body, extra, "Vertex", "",
+                                         SPV_ENV_UNIVERSAL_1_5, "GLSL450", decl)
+                          .c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_ID, ValidateInstructions());
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("ColorAttachmentReadEXT requires Fragment execution model"));
+}
+
+TEST_F(ValidateImage, DepthAttachmentReadEXTWrongResultType) {
+  const std::string body = R"(
+%res1 = OpDepthAttachmentReadEXT %s32
+)";
+
+  const std::string extra = R"(
+OpCapability StorageImageReadWithoutFormat
+OpCapability TileImageDepthReadAccessEXT
+OpExtension "SPV_EXT_shader_tile_image"
+)";
+
+  CompileSuccessfully(GenerateShaderCode(body, extra, "Fragment", "",
+                                         SPV_ENV_UNIVERSAL_1_5, "GLSL450", "")
+                          .c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr(
+          "Expected Result Type to be a 32-bit floating-point type scalar"));
+}
+
+TEST_F(ValidateImage, DepthAttachmentReadEXTWrongSample) {
+  const std::string body = R"(
+%res1 = OpDepthAttachmentReadEXT %f32 %f32_0
+)";
+
+  const std::string extra = R"(
+OpCapability StorageImageReadWithoutFormat
+OpCapability TileImageDepthReadAccessEXT
+OpExtension "SPV_EXT_shader_tile_image"
+)";
+
+  CompileSuccessfully(GenerateShaderCode(body, extra, "Fragment", "",
+                                         SPV_ENV_UNIVERSAL_1_5, "GLSL450", "")
+                          .c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("Expected Sample to be a 32-bit int scalar"));
+}
+
+TEST_F(ValidateImage, DepthAttachmentReadEXTWrongExecutionModel) {
+  const std::string body = R"(
+%res1 = OpDepthAttachmentReadEXT %f32
+)";
+
+  const std::string extra = R"(
+OpCapability StorageImageReadWithoutFormat
+OpCapability TileImageDepthReadAccessEXT
+OpExtension "SPV_EXT_shader_tile_image"
+)";
+
+  CompileSuccessfully(GenerateShaderCode(body, extra, "Vertex", "",
+                                         SPV_ENV_UNIVERSAL_1_5, "GLSL450", "")
+                          .c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_ID, ValidateInstructions());
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("DepthAttachmentReadEXT requires Fragment execution model"));
+}
+
+TEST_F(ValidateImage, StencilAttachmentReadEXTWrongResultType) {
+  const std::string body = R"(
+%res1 = OpStencilAttachmentReadEXT %f32
+)";
+
+  const std::string extra = R"(
+OpCapability StorageImageReadWithoutFormat
+OpCapability TileImageStencilReadAccessEXT
+OpExtension "SPV_EXT_shader_tile_image"
+)";
+
+  CompileSuccessfully(GenerateShaderCode(body, extra, "Fragment", "",
+                                         SPV_ENV_UNIVERSAL_1_5, "GLSL450", "")
+                          .c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Expected Result Type to be a 32-bit integer type scalar"));
+}
+
+TEST_F(ValidateImage, StencilAttachmentReadEXTWrongSample) {
+  const std::string body = R"(
+%res1 = OpStencilAttachmentReadEXT %u32 %f32_0
+)";
+
+  const std::string extra = R"(
+OpCapability StorageImageReadWithoutFormat
+OpCapability TileImageStencilReadAccessEXT
+OpExtension "SPV_EXT_shader_tile_image"
+)";
+
+  CompileSuccessfully(GenerateShaderCode(body, extra, "Fragment", "",
+                                         SPV_ENV_UNIVERSAL_1_5, "GLSL450", "")
+                          .c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("Expected Sample to be a 32-bit int scalar"));
+}
+
+TEST_F(ValidateImage, StencilAttachmentReadEXTWrongExecutionModel) {
+  const std::string body = R"(
+%res1 = OpStencilAttachmentReadEXT %u32
+)";
+
+  const std::string extra = R"(
+OpCapability StorageImageReadWithoutFormat
+OpCapability TileImageStencilReadAccessEXT
+OpExtension "SPV_EXT_shader_tile_image"
+)";
+
+  CompileSuccessfully(GenerateShaderCode(body, extra, "Vertex", "",
+                                         SPV_ENV_UNIVERSAL_1_5, "GLSL450", "")
+                          .c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_ID, ValidateInstructions());
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("StencilAttachmentReadEXT requires Fragment execution model"));
+}
+
 TEST_F(ValidateImage, TypeImage_OpenCL_Sampled0_OK) {
   const std::string code = GetKernelHeader() + R"(
 %img_type = OpTypeImage %void 2D 0 0 0 0 Unknown ReadOnly
@@ -1417,14 +1687,14 @@ TEST_F(ValidateImage, ImageTexelPointerResultTypeNotNumericNorVoid) {
 
 TEST_F(ValidateImage, ImageTexelPointerImageNotResultTypePointer) {
   const std::string body = R"(
-%texel_ptr = OpImageTexelPointer %ptr_Image_u32 %type_image_f32_buffer_0002_r32ui %u32_0 %u32_0
+%texel_ptr = OpImageTexelPointer %ptr_Image_u32 %type_image_f32_buffer_0002_r32f %u32_0 %u32_0
 %sum = OpAtomicIAdd %u32 %texel_ptr %u32_1 %u32_0 %u32_1
 )";
 
   CompileSuccessfully(GenerateShaderCode(body).c_str());
   ASSERT_EQ(SPV_ERROR_INVALID_ID, ValidateInstructions());
   EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("Operand '148[%148]' cannot be a "
+              HasSubstr("Operand '157[%157]' cannot be a "
                         "type"));
 }
 
@@ -1470,14 +1740,15 @@ TEST_F(ValidateImage, ImageTexelPointerImageDimSubpassDataBad) {
 
 TEST_F(ValidateImage, ImageTexelPointerImageCoordTypeBad) {
   const std::string body = R"(
-%texel_ptr = OpImageTexelPointer %ptr_Image_f32 %private_image_f32_buffer_0002_r32ui %f32_0 %f32_0
+%texel_ptr = OpImageTexelPointer %ptr_Image_f32 %private_image_f32_buffer_0002_r32f %f32_0 %f32_0
 %sum = OpAtomicIAdd %f32 %texel_ptr %f32_1 %f32_0 %f32_1
 )";
 
   CompileSuccessfully(GenerateShaderCode(body).c_str());
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
-  EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("Expected Coordinate to be integer scalar or vector"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Expected Coordinate to be a 32-bit integer scalar or vector"));
 }
 
 TEST_F(ValidateImage, ImageTexelPointerImageCoordSizeBad) {
@@ -1635,8 +1906,9 @@ TEST_F(ValidateImage, SampleImplicitLodWrongCoordinateType) {
 
   CompileSuccessfully(GenerateShaderCode(body).c_str());
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
-  EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("Expected Coordinate to be float scalar or vector"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Expected Coordinate to be a 32-bit float scalar or vector"));
 }
 
 TEST_F(ValidateImage, SampleImplicitLodCoordinateSizeTooSmall) {
@@ -1799,7 +2071,22 @@ TEST_F(ValidateImage, SampleExplicitLodWrongCoordinateType) {
   CompileSuccessfully(GenerateShaderCode(body).c_str());
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
   EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("Expected Coordinate to be float scalar or vector"));
+              HasSubstr("Expected Coordinate to be a 32-bit integer or float "
+                        "scalar or vector"));
+}
+
+TEST_F(ValidateImage, SampleExplicitLodWrongCoordinateType16Bit) {
+  const std::string body = R"(
+%img = OpLoad %type_image_f32_2d_0001 %uniform_image_f32_2d_0001
+%sampler = OpLoad %type_sampler %uniform_sampler
+%simg = OpSampledImage %type_sampled_image_f32_2d_0001 %img %sampler
+%res1 = OpImageSampleExplicitLod %f32vec4 %simg %f16vec2_00 Lod %f32_1
+)";
+
+  CompileSuccessfully(GenerateShaderCode(body).c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("Expected Coordinate to be a 32-bit scalar or vector"));
 }
 
 TEST_F(ValidateImage, SampleExplicitLodCoordinateSizeTooSmall) {
@@ -1874,9 +2161,25 @@ TEST_F(ValidateImage, LodWrongType) {
 
   CompileSuccessfully(GenerateShaderCode(body).c_str());
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Expected Image Operand Lod to be a 32-bit float scalar when "
+                "used with ExplicitLod"));
+}
+
+TEST_F(ValidateImage, LodWithHalf) {
+  const std::string body = R"(
+%img = OpLoad %type_image_f32_2d_0001 %uniform_image_f32_2d_0001
+%sampler = OpLoad %type_sampler %uniform_sampler
+%simg = OpSampledImage %type_sampled_image_f32_2d_0001 %img %sampler
+%res1 = OpImageSampleExplicitLod %f32vec4 %simg %f32vec2_00 Lod %f16_0
+)";
+
+  CompileSuccessfully(GenerateShaderCode(body).c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
   EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("Expected Image Operand Lod to be float scalar when "
-                        "used with ExplicitLod"));
+              HasSubstr("Expected Image Operand Lod to be a 32-bit float "
+                        "scalar when used with ExplicitLod"));
 }
 
 TEST_F(ValidateImage, LodWrongDim) {
@@ -1891,6 +2194,18 @@ TEST_F(ValidateImage, LodWrongDim) {
   EXPECT_THAT(getDiagnosticString(),
               HasSubstr("Image Operand Lod requires 'Dim' parameter to be 1D, "
                         "2D, 3D or Cube"));
+}
+
+TEST_F(ValidateImage, LodWrongMultisample) {
+  const std::string body = R"(
+%img = OpLoad %type_image_f32_2d_0011 %uniform_image_f32_2d_0011
+%res1 = OpImageFetch %f32vec4 %img %u32vec2_01 Lod|Sample %u32_1 %u32_1
+)";
+
+  CompileSuccessfully(GenerateShaderCode(body).c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("Image Operand Lod requires 'MS' parameter to be 0"));
 }
 
 TEST_F(ValidateImage, MinLodIncompatible) {
@@ -1950,8 +2265,24 @@ TEST_F(ValidateImage, SampleImplicitLodBiasWrongType) {
 
   CompileSuccessfully(GenerateShaderCode(body).c_str());
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
-  EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("Expected Image Operand Bias to be float scalar"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Expected Image Operand Bias to be a 32-bit float scalar"));
+}
+
+TEST_F(ValidateImage, SampleImplicitLodBias16Bit) {
+  const std::string body = R"(
+%img = OpLoad %type_image_f32_2d_0001 %uniform_image_f32_2d_0001
+%sampler = OpLoad %type_sampler %uniform_sampler
+%simg = OpSampledImage %type_sampled_image_f32_2d_0001 %img %sampler
+%res2 = OpImageSampleImplicitLod %f32vec4 %simg %f32vec2_hh Bias %f16_0
+)";
+
+  CompileSuccessfully(GenerateShaderCode(body).c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Expected Image Operand Bias to be a 32-bit float scalar"));
 }
 
 TEST_F(ValidateImage, SampleImplicitLodBiasWrongDim) {
@@ -1979,9 +2310,10 @@ TEST_F(ValidateImage, SampleExplicitLodGradDxWrongType) {
 
   CompileSuccessfully(GenerateShaderCode(body).c_str());
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
-  EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("Expected both Image Operand Grad ids to be float "
-                        "scalars or vectors"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Expected both Image Operand Grad ids to be 32-bit float "
+                "scalars or vectors"));
 }
 
 TEST_F(ValidateImage, SampleExplicitLodGradDyWrongType) {
@@ -1994,9 +2326,25 @@ TEST_F(ValidateImage, SampleExplicitLodGradDyWrongType) {
 
   CompileSuccessfully(GenerateShaderCode(body).c_str());
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Expected both Image Operand Grad ids to be 32-bit float "
+                "scalars or vectors"));
+}
+
+TEST_F(ValidateImage, SampleExplicitLodGrad16Bit) {
+  const std::string body = R"(
+%img = OpLoad %type_image_f32_cube_0101 %uniform_image_f32_cube_0101
+%sampler = OpLoad %type_sampler %uniform_sampler
+%simg = OpSampledImage %type_sampled_image_f32_cube_0101 %img %sampler
+%res1 = OpImageSampleExplicitLod %f32vec4 %simg %f32vec4_0000 Grad %f16vec2_00 %f32vec2_00
+)";
+
+  CompileSuccessfully(GenerateShaderCode(body).c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
   EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("Expected both Image Operand Grad ids to be float "
-                        "scalars or vectors"));
+              HasSubstr("Expected both Image Operand Grad ids to be 32-bit "
+                        "float scalars or vectors"));
 }
 
 TEST_F(ValidateImage, SampleExplicitLodGradDxWrongSize) {
@@ -2057,10 +2405,24 @@ TEST_F(ValidateImage, SampleImplicitLodConstOffsetWrongType) {
 
   CompileSuccessfully(GenerateShaderCode(body).c_str());
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
-  EXPECT_THAT(
-      getDiagnosticString(),
-      HasSubstr(
-          "Expected Image Operand ConstOffset to be int scalar or vector"));
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("Expected Image Operand ConstOffset to be a 32-bit int "
+                        "scalar or vector"));
+}
+
+TEST_F(ValidateImage, SampleImplicitLodConstOffset16Bit) {
+  const std::string body = R"(
+%img = OpLoad %type_image_f32_2d_0001 %uniform_image_f32_2d_0001
+%sampler = OpLoad %type_sampler %uniform_sampler
+%simg = OpSampledImage %type_sampled_image_f32_2d_0001 %img %sampler
+%res4 = OpImageSampleImplicitLod %f32vec4 %simg %f32vec2_00 ConstOffset %u16_0
+)";
+
+  CompileSuccessfully(GenerateShaderCode(body).c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("Expected Image Operand ConstOffset to be a 32-bit int "
+                        "scalar or vector"));
 }
 
 TEST_F(ValidateImage, SampleImplicitLodConstOffsetWrongSize) {
@@ -2121,7 +2483,24 @@ TEST_F(ValidateImage, SampleImplicitLodOffsetWrongType) {
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
   EXPECT_THAT(
       getDiagnosticString(),
-      HasSubstr("Expected Image Operand Offset to be int scalar or vector"));
+      HasSubstr(
+          "Expected Image Operand Offset to be a 32-bit int scalar or vector"));
+}
+
+TEST_F(ValidateImage, SampleImplicitLodOffset16Bit) {
+  const std::string body = R"(
+%img = OpLoad %type_image_f32_2d_0001 %uniform_image_f32_2d_0001
+%sampler = OpLoad %type_sampler %uniform_sampler
+%simg = OpSampledImage %type_sampled_image_f32_2d_0001 %img %sampler
+%res4 = OpImageSampleImplicitLod %f32vec4 %simg %f32vec4_0000 Offset %u16_0
+)";
+
+  CompileSuccessfully(GenerateShaderCode(body).c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr(
+          "Expected Image Operand Offset to be a 32-bit int scalar or vector"));
 }
 
 TEST_F(ValidateImage, SampleImplicitLodOffsetWrongSize) {
@@ -2228,8 +2607,24 @@ TEST_F(ValidateImage, SampleImplicitLodMinLodWrongType) {
 
   CompileSuccessfully(GenerateShaderCode(body).c_str());
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
-  EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("Expected Image Operand MinLod to be float scalar"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Expected Image Operand MinLod to be a 32-bit float scalar"));
+}
+
+TEST_F(ValidateImage, SampleImplicitLodMinLod16Bit) {
+  const std::string body = R"(
+%img = OpLoad %type_image_f32_cube_0101 %uniform_image_f32_cube_0101
+%sampler = OpLoad %type_sampler %uniform_sampler
+%simg = OpSampledImage %type_sampled_image_f32_cube_0101 %img %sampler
+%res1 = OpImageSampleImplicitLod %f32vec4 %simg %f32vec4_0000 MinLod %f16_0
+)";
+
+  CompileSuccessfully(GenerateShaderCode(body).c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Expected Image Operand MinLod to be a 32-bit float scalar"));
 }
 
 TEST_F(ValidateImage, SampleImplicitLodMinLodWrongDim) {
@@ -2282,6 +2677,20 @@ TEST_F(ValidateImage, SampleProjExplicitLodSuccessRect) {
 
   CompileSuccessfully(GenerateShaderCode(body).c_str());
   ASSERT_EQ(SPV_SUCCESS, ValidateInstructions());
+}
+
+TEST_F(ValidateImage, GradWrongMultisample) {
+  const std::string body = R"(
+%img = OpLoad %type_image_f32_2d_0011 %uniform_image_f32_2d_0011
+%sampler = OpLoad %type_sampler %uniform_sampler
+%simg = OpSampledImage %type_sampled_image_f32_2d_0011 %img %sampler
+%res1 = OpImageSampleExplicitLod %f32vec4 %simg %f32vec2_00 Grad %f32vec2_01 %f32vec2_01
+)";
+
+  CompileSuccessfully(GenerateShaderCode(body).c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("Sampling operation is invalid for multisample image"));
 }
 
 TEST_F(ValidateImage, SampleProjExplicitLodWrongResultType) {
@@ -2376,8 +2785,9 @@ TEST_F(ValidateImage, SampleProjExplicitLodWrongCoordinateType) {
 
   CompileSuccessfully(GenerateShaderCode(body).c_str());
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
-  EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("Expected Coordinate to be float scalar or vector"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Expected Coordinate to be a 32-bit float scalar or vector"));
 }
 
 TEST_F(ValidateImage, SampleProjExplicitLodCoordinateSizeTooSmall) {
@@ -2512,8 +2922,9 @@ TEST_F(ValidateImage, SampleProjImplicitLodWrongCoordinateType) {
 
   CompileSuccessfully(GenerateShaderCode(body).c_str());
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
-  EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("Expected Coordinate to be float scalar or vector"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Expected Coordinate to be a 32-bit float scalar or vector"));
 }
 
 TEST_F(ValidateImage, SampleProjImplicitLodCoordinateSizeTooSmall) {
@@ -2638,8 +3049,9 @@ TEST_F(ValidateImage, SampleDrefImplicitLodWrongCoordinateType) {
 
   CompileSuccessfully(GenerateShaderCode(body).c_str());
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
-  EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("Expected Coordinate to be float scalar or vector"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Expected Coordinate to be a 32-bit float scalar or vector"));
 }
 
 TEST_F(ValidateImage, SampleDrefImplicitLodCoordinateSizeTooSmall) {
@@ -2795,8 +3207,9 @@ TEST_F(ValidateImage, SampleDrefExplicitLodWrongCoordinateType) {
 
   CompileSuccessfully(GenerateShaderCode(body).c_str());
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
-  EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("Expected Coordinate to be float scalar or vector"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Expected Coordinate to be a 32-bit float scalar or vector"));
 }
 
 TEST_F(ValidateImage, SampleDrefExplicitLodCoordinateSizeTooSmall) {
@@ -2935,8 +3348,9 @@ TEST_F(ValidateImage, SampleProjDrefImplicitLodWrongCoordinateType) {
 
   CompileSuccessfully(GenerateShaderCode(body).c_str());
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
-  EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("Expected Coordinate to be float scalar or vector"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Expected Coordinate to be a 32-bit float scalar or vector"));
 }
 
 TEST_F(ValidateImage, SampleProjDrefImplicitLodCoordinateSizeTooSmall) {
@@ -3074,8 +3488,9 @@ TEST_F(ValidateImage, SampleProjDrefExplicitLodWrongCoordinateType) {
 
   CompileSuccessfully(GenerateShaderCode(body).c_str());
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
-  EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("Expected Coordinate to be float scalar or vector"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Expected Coordinate to be a 32-bit float scalar or vector"));
 }
 
 TEST_F(ValidateImage, SampleProjDrefExplicitLodCoordinateSizeTooSmall) {
@@ -3238,8 +3653,9 @@ TEST_F(ValidateImage, FetchWrongCoordinateType) {
 
   CompileSuccessfully(GenerateShaderCode(body).c_str());
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
-  EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("Expected Coordinate to be int scalar or vector"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Expected Coordinate to be a 32-bit integer scalar or vector"));
 }
 
 TEST_F(ValidateImage, FetchCoordinateSizeTooSmall) {
@@ -3263,9 +3679,26 @@ TEST_F(ValidateImage, FetchLodNotInt) {
 
   CompileSuccessfully(GenerateShaderCode(body).c_str());
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
-  EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("Expected Image Operand Lod to be int scalar when used "
-                        "with OpImageFetch"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr(
+          "Expected Image Operand Lod to be a 32-bit int scalar when used "
+          "with OpImageFetch"));
+}
+
+TEST_F(ValidateImage, FetchLod16Int) {
+  const std::string body = R"(
+%img = OpLoad %type_image_f32_2d_0001 %uniform_image_f32_2d_0001
+%res1 = OpImageFetch %f32vec4 %img %u32vec2_01 Lod %u16_0
+)";
+
+  CompileSuccessfully(GenerateShaderCode(body).c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr(
+          "Expected Image Operand Lod to be a 32-bit int scalar when used "
+          "with OpImageFetch"));
 }
 
 TEST_F(ValidateImage, FetchMultisampledMissingSample) {
@@ -3396,8 +3829,9 @@ TEST_F(ValidateImage, GatherWrongCoordinateType) {
 
   CompileSuccessfully(GenerateShaderCode(body).c_str());
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
-  EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("Expected Coordinate to be float scalar or vector"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Expected Coordinate to be a 32-bit float scalar or vector"));
 }
 
 TEST_F(ValidateImage, GatherCoordinateSizeTooSmall) {
@@ -3537,7 +3971,7 @@ TEST_F(ValidateImage, GatherConstOffsetsArrayNotVector) {
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
   EXPECT_THAT(getDiagnosticString(),
               HasSubstr("Expected Image Operand ConstOffsets array components "
-                        "to be int vectors of size 2"));
+                        "to be a 32-bit int vectors of size 2"));
 }
 
 TEST_F(ValidateImage, GatherConstOffsetsArrayVectorWrongSize) {
@@ -3552,7 +3986,22 @@ TEST_F(ValidateImage, GatherConstOffsetsArrayVectorWrongSize) {
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
   EXPECT_THAT(getDiagnosticString(),
               HasSubstr("Expected Image Operand ConstOffsets array components "
-                        "to be int vectors of size 2"));
+                        "to be a 32-bit int vectors of size 2"));
+}
+
+TEST_F(ValidateImage, GatherConstOffsetsArrayVector16Bit) {
+  const std::string body = R"(
+%img = OpLoad %type_image_f32_2d_0001 %uniform_image_f32_2d_0001
+%sampler = OpLoad %type_sampler %uniform_sampler
+%simg = OpSampledImage %type_sampled_image_f32_2d_0001 %img %sampler
+%res1 = OpImageGather %f32vec4 %simg %f32vec4_0000 %u32_1 ConstOffsets %const_offsets4f16
+)";
+
+  CompileSuccessfully(GenerateShaderCode(body).c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("Expected Image Operand ConstOffsets array components "
+                        "to be a 32-bit int vectors of size 2"));
 }
 
 TEST_F(ValidateImage, GatherConstOffsetsArrayNotConst) {
@@ -3705,7 +4154,7 @@ TEST_F(ValidateImage, ReadSuccess3) {
 TEST_F(ValidateImage, ReadSuccess4) {
   const std::string body = R"(
 %img = OpLoad %type_image_f32_spd_0002 %uniform_image_f32_spd_0002
-%res1 = OpImageRead %f32vec4 %img %u32vec2_01
+%res1 = OpImageRead %f32vec4 %img %u32vec2_00
 )";
 
   CompileSuccessfully(GenerateShaderCode(body).c_str());
@@ -3872,7 +4321,7 @@ TEST_F(ValidateImage, ReadVoidSampledType) {
   ASSERT_EQ(SPV_SUCCESS, ValidateInstructions());
 }
 
-TEST_F(ValidateImage, ReadWrongCoordinateType) {
+TEST_F(ValidateImage, ReadFloatCoordinateType) {
   const std::string body = R"(
 %img = OpLoad %type_image_u32_2d_0002 %uniform_image_u32_2d_0002
 %res1 = OpImageRead %u32vec4 %img %f32vec2_00
@@ -3880,9 +4329,20 @@ TEST_F(ValidateImage, ReadWrongCoordinateType) {
 
   const std::string extra = "\nOpCapability StorageImageReadWithoutFormat\n";
   CompileSuccessfully(GenerateShaderCode(body, extra).c_str());
+  ASSERT_EQ(SPV_SUCCESS, ValidateInstructions());
+}
+
+TEST_F(ValidateImage, ReadWrongCoordinateType) {
+  const std::string body = R"(
+%img = OpLoad %type_image_u32_2d_0002 %uniform_image_u32_2d_0002
+%res1 = OpImageRead %u32vec4 %img %f16vec2_00
+)";
+
+  const std::string extra = "\nOpCapability StorageImageReadWithoutFormat\n";
+  CompileSuccessfully(GenerateShaderCode(body, extra).c_str());
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
   EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("Expected Coordinate to be int scalar or vector"));
+              HasSubstr("Expected Coordinate to be a 32-bit scalar or vector"));
 }
 
 TEST_F(ValidateImage, ReadCoordinateSizeTooSmall) {
@@ -4046,7 +4506,7 @@ OpImageWrite %img %u32vec2_01 %f32vec4_0000
               HasSubstr("Expected Image 'Sampled' parameter to be 0 or 2"));
 }
 
-TEST_F(ValidateImage, WriteWrongCoordinateType) {
+TEST_F(ValidateImage, WriteFloatCoordinateType) {
   const std::string body = R"(
 %img = OpLoad %type_image_u32_2d_0002 %uniform_image_u32_2d_0002
 OpImageWrite %img %f32vec2_00 %u32vec4_0123
@@ -4054,9 +4514,20 @@ OpImageWrite %img %f32vec2_00 %u32vec4_0123
 
   const std::string extra = "\nOpCapability StorageImageWriteWithoutFormat\n";
   CompileSuccessfully(GenerateShaderCode(body, extra).c_str());
+  ASSERT_EQ(SPV_SUCCESS, ValidateInstructions());
+}
+
+TEST_F(ValidateImage, WriteWrongCoordinateType) {
+  const std::string body = R"(
+%img = OpLoad %type_image_u32_2d_0002 %uniform_image_u32_2d_0002
+OpImageWrite %img %f16vec2_00 %u32vec4_0123
+)";
+
+  const std::string extra = "\nOpCapability StorageImageWriteWithoutFormat\n";
+  CompileSuccessfully(GenerateShaderCode(body, extra).c_str());
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
   EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("Expected Coordinate to be int scalar or vector"));
+              HasSubstr("Expected Coordinate to be a 32-bit scalar or vector"));
 }
 
 TEST_F(ValidateImage, WriteCoordinateSizeTooSmall) {
@@ -4145,8 +4616,34 @@ OpImageWrite %img %u32vec2_01 %f32vec4_0000 Sample %f32_1
                                          declarations)
                           .c_str());
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
-  EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("Expected Image Operand Sample to be int scalar"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Expected Image Operand Sample to be a 32-bit int scalar"));
+}
+
+TEST_F(ValidateImage, WriteSample16Bit) {
+  const std::string body = R"(
+%img = OpLoad %type_image_f32_2d_0012 %uniform_image_f32_2d_0012
+OpImageWrite %img %u32vec2_01 %f32vec4_0000 Sample %u16_0
+)";
+
+  const std::string extra = R"(
+    OpCapability StorageImageWriteWithoutFormat
+    OpCapability StorageImageMultisample
+    )";
+  const std::string declarations = R"(
+%type_image_f32_2d_0012 = OpTypeImage %f32 2D 0 0 1 2 Unknown
+%ptr_image_f32_2d_0012 = OpTypePointer UniformConstant %type_image_f32_2d_0012
+%uniform_image_f32_2d_0012 = OpVariable %ptr_image_f32_2d_0012 UniformConstant
+    )";
+  CompileSuccessfully(GenerateShaderCode(body, extra, "Fragment", "",
+                                         SPV_ENV_UNIVERSAL_1_0, "GLSL450",
+                                         declarations)
+                          .c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Expected Image Operand Sample to be a 32-bit int scalar"));
 }
 
 TEST_F(ValidateImage, WriteSampleNotMultisampled) {
@@ -4451,7 +4948,19 @@ TEST_F(ValidateImage, QuerySizeLodWrongLodType) {
   CompileSuccessfully(GenerateKernelCode(body).c_str());
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
   EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("Expected Level of Detail to be int scalar"));
+              HasSubstr("Expected Level of Detail to be a 32-bit int scalar"));
+}
+
+TEST_F(ValidateImage, QuerySizeLodWrong16Bit) {
+  const std::string body = R"(
+%img = OpLoad %type_image_f32_2d_0001 %uniform_image_f32_2d_0001
+%res1 = OpImageQuerySizeLod %u32vec2 %img %u16_0
+)";
+
+  CompileSuccessfully(GenerateKernelCode(body).c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("Expected Level of Detail to be a 32-bit int scalar"));
 }
 
 TEST_F(ValidateImage, QuerySizeSuccess) {
@@ -4550,11 +5059,25 @@ TEST_F(ValidateImage, QueryLodSuccessKernel) {
 %sampler = OpLoad %type_sampler %uniform_sampler
 %simg = OpSampledImage %type_sampled_image_f32_2d_0001 %img %sampler
 %res1 = OpImageQueryLod %f32vec2 %simg %f32vec2_hh
-%res2 = OpImageQueryLod %f32vec2 %simg %u32vec2_01
 )";
 
   CompileSuccessfully(GenerateKernelCode(body).c_str());
   ASSERT_EQ(SPV_SUCCESS, ValidateInstructions());
+}
+
+TEST_F(ValidateImage, QueryLodNonFloatKernel) {
+  const std::string body = R"(
+%img = OpLoad %type_image_f32_2d_0001 %uniform_image_f32_2d_0001
+%sampler = OpLoad %type_sampler %uniform_sampler
+%simg = OpSampledImage %type_sampled_image_f32_2d_0001 %img %sampler
+%res1 = OpImageQueryLod %f32vec2 %simg %u32vec2_01
+)";
+
+  CompileSuccessfully(GenerateKernelCode(body).c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Expected Coordinate to be a 32-bit float scalar or vector"));
 }
 
 TEST_F(ValidateImage, QueryLodSuccessShader) {
@@ -4634,8 +5157,9 @@ TEST_F(ValidateImage, QueryLodWrongCoordinateType) {
 
   CompileSuccessfully(GenerateShaderCode(body).c_str());
   ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
-  EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("Expected Coordinate to be float scalar or vector"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Expected Coordinate to be a 32-bit float scalar or vector"));
 }
 
 TEST_F(ValidateImage, QueryLodCoordinateSizeTooSmall) {
@@ -5041,7 +5565,7 @@ OpExecutionMode %main LocalSize 8 8 1
 TEST_F(ValidateImage, ReadSubpassDataWrongExecutionModel) {
   const std::string body = R"(
 %img = OpLoad %type_image_f32_spd_0002 %uniform_image_f32_spd_0002
-%res1 = OpImageRead %f32vec4 %img %u32vec2_01
+%res1 = OpImageRead %f32vec4 %img %u32vec2_00
 )";
 
   const std::string extra = "\nOpCapability StorageImageReadWithoutFormat\n";
@@ -6012,7 +6536,7 @@ TEST_F(ValidateImage, ZeroExtendScalarUIntTexelV14Good) {
   EXPECT_THAT(getDiagnosticString(), Eq(""));
 }
 
-TEST_F(ValidateImage, ZeroExtendScalarSIntTexelV14Good) {
+TEST_F(ValidateImage, ZeroExtendScalarSIntTexelV14) {
   // Zeroed int sampled type
   const std::string body = R"(
 %img = OpLoad %type_image_s32_2d_0002 %uniform_image_s32_2d_0002
@@ -6023,8 +6547,11 @@ TEST_F(ValidateImage, ZeroExtendScalarSIntTexelV14Good) {
   CompileSuccessfully(
       GenerateShaderCode(body, extra, "Fragment", "", SPV_ENV_UNIVERSAL_1_4),
       SPV_ENV_UNIVERSAL_1_4);
-  EXPECT_EQ(SPV_SUCCESS, ValidateInstructions(SPV_ENV_UNIVERSAL_1_4));
-  EXPECT_THAT(getDiagnosticString(), Eq(""));
+  EXPECT_EQ(SPV_ERROR_INVALID_DATA,
+            ValidateInstructions(SPV_ENV_UNIVERSAL_1_4));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Using ZeroExtend, but result type is a signed integer type."));
 }
 
 TEST_F(ValidateImage, ZeroExtendScalarVectorUIntTexelV14Good) {
@@ -6041,7 +6568,7 @@ TEST_F(ValidateImage, ZeroExtendScalarVectorUIntTexelV14Good) {
   EXPECT_THAT(getDiagnosticString(), Eq(""));
 }
 
-TEST_F(ValidateImage, ZeroExtendVectorSIntTexelV14Good) {
+TEST_F(ValidateImage, ZeroExtendVectorSIntTexelV14) {
   const std::string body = R"(
 %img = OpLoad %type_image_s32_2d_0002 %uniform_image_s32_2d_0002
 %res1 = OpImageRead %s32vec4 %img %u32vec2_01 ZeroExtend
@@ -6051,8 +6578,11 @@ TEST_F(ValidateImage, ZeroExtendVectorSIntTexelV14Good) {
   CompileSuccessfully(
       GenerateShaderCode(body, extra, "Fragment", "", SPV_ENV_UNIVERSAL_1_4),
       SPV_ENV_UNIVERSAL_1_4);
-  EXPECT_EQ(SPV_SUCCESS, ValidateInstructions(SPV_ENV_UNIVERSAL_1_4));
-  EXPECT_THAT(getDiagnosticString(), Eq(""));
+  EXPECT_EQ(SPV_ERROR_INVALID_DATA,
+            ValidateInstructions(SPV_ENV_UNIVERSAL_1_4));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Using ZeroExtend, but result type is a signed integer type."));
 }
 
 TEST_F(ValidateImage, ReadLodAMDSuccess1) {
@@ -6452,20 +6982,13 @@ TEST_F(ValidateImage, ImageTexelPointerR64iSuccessVulkan) {
 }
 
 TEST_F(ValidateImage, ImageTexelPointerR32fSuccessVulkan) {
-  const std::string& declarations = R"(
-%type_image_f32_buffer_0002_r32f = OpTypeImage %f32 Buffer 0 0 0 2 R32f
-%ptr_image_f32_buffer_0002_r32f = OpTypePointer Private %type_image_f32_buffer_0002_r32f
-%private_image_f32_buffer_0002_r32f = OpVariable %ptr_image_f32_buffer_0002_r32f Private
-)";
-
   const std::string body = R"(
 %texel_ptr = OpImageTexelPointer %ptr_Image_f32 %private_image_f32_buffer_0002_r32f %u32_0 %u32_0
 )";
 
   spv_target_env env = SPV_ENV_VULKAN_1_0;
   CompileSuccessfully(
-      GenerateShaderCode(body, "", "Fragment", "", env, "GLSL450", declarations)
-          .c_str(),
+      GenerateShaderCode(body, "", "Fragment", "", env, "GLSL450").c_str(),
       env);
   ASSERT_EQ(SPV_SUCCESS, ValidateInstructions(env));
 }
@@ -6492,19 +7015,19 @@ TEST_F(ValidateImage, ImageTexelPointerRgba32iVulkan) {
               AnyVUID("VUID-StandaloneSpirv-OpImageTexelPointer-04658"));
   EXPECT_THAT(getDiagnosticString(),
               HasSubstr("Expected the Image Format in Image to be R64i, R64ui, "
-                        "R32f, R32i, or R32ui for Vulkan environment"));
+                        "R32f, R32i, or R32ui for Vulkan environment using "
+                        "OpImageTexelPointer"));
 }
 
 TEST_F(ValidateImage, ImageTexelPointerRgba16fVulkan) {
   const std::string& declarations = R"(
-%type_image_s32_buffer_0002_rgba16f = OpTypeImage %s32 Buffer 0 0 0 2 Rgba16f
-%ptr_Image_s32 = OpTypePointer Image %s32
-%ptr_image_s32_buffer_0002_rgba16f = OpTypePointer Private %type_image_s32_buffer_0002_rgba16f
-%private_image_s32_buffer_0002_rgba16f = OpVariable %ptr_image_s32_buffer_0002_rgba16f Private
+%type_image_f32_buffer_0002_rgba16f = OpTypeImage %f32 Buffer 0 0 0 2 Rgba16f
+%ptr_image_f32_buffer_0002_rgba16f = OpTypePointer Private %type_image_f32_buffer_0002_rgba16f
+%private_image_f32_buffer_0002_rgba16f = OpVariable %ptr_image_f32_buffer_0002_rgba16f Private
 )";
 
   const std::string body = R"(
-%texel_ptr = OpImageTexelPointer %ptr_Image_s32 %private_image_s32_buffer_0002_rgba16f %u32_0 %u32_0
+%texel_ptr = OpImageTexelPointer %ptr_Image_f32 %private_image_f32_buffer_0002_rgba16f %u32_0 %u32_0
 )";
 
   spv_target_env env = SPV_ENV_VULKAN_1_0;
@@ -6517,7 +7040,8 @@ TEST_F(ValidateImage, ImageTexelPointerRgba16fVulkan) {
               AnyVUID("VUID-StandaloneSpirv-OpImageTexelPointer-04658"));
   EXPECT_THAT(getDiagnosticString(),
               HasSubstr("Expected the Image Format in Image to be R64i, R64ui, "
-                        "R32f, R32i, or R32ui for Vulkan environment"));
+                        "R32f, R32i, or R32ui for Vulkan environment using "
+                        "OpImageTexelPointer"));
 }
 
 TEST_F(ValidateImage, ImageExecutionModeLimitationNoMode) {
@@ -10940,6 +11464,543 @@ TEST_F(ValidateImage, ImageTexelPointerNotAPointer) {
   EXPECT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions());
   EXPECT_THAT(getDiagnosticString(),
               HasSubstr("Expected Result Type to be a pointer"));
+}
+
+TEST_F(ValidateImage, TileImageNotFragment) {
+  const std::string body = R"(
+    OpCapability Shader
+    OpCapability TileImageColorReadAccessEXT
+    OpExtension "SPV_EXT_shader_tile_image"
+    OpMemoryModel Logical GLSL450
+    OpEntryPoint GLCompute %main "main"
+    OpExecutionMode %main LocalSize 1 1 1
+    %void = OpTypeVoid
+    %func = OpTypeFunction %void
+    %float = OpTypeFloat 32
+    %v4float = OpTypeVector %float 4
+    %ptr = OpTypePointer TileImageEXT %v4float
+    %var = OpVariable %ptr TileImageEXT
+    %main = OpFunction %void None %func
+    %label = OpLabel
+    %val = OpLoad %v4float %var
+    OpReturn
+    OpFunctionEnd
+  )";
+
+  CompileSuccessfully(body.c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_ID, ValidateInstructions(SPV_ENV_VULKAN_1_0));
+  EXPECT_THAT(getDiagnosticString(),
+              AnyVUID("VUID-StandaloneSpirv-None-08720"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr(
+          "TileImageEXT Storage Class is limited to Fragment execution model"));
+}
+
+TEST_F(ValidateImage, SubpassDataNonZero) {
+  const std::string body = R"(
+               OpCapability Shader
+               OpCapability InputAttachment
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %main "main" %outColor %inputColor
+               OpExecutionMode %main OriginUpperLeft
+               OpDecorate %outColor Location 0
+               OpDecorate %inputColor Binding 0
+               OpDecorate %inputColor DescriptorSet 0
+               OpDecorate %inputColor InputAttachmentIndex 0
+       %void = OpTypeVoid
+          %4 = OpTypeFunction %void
+      %float = OpTypeFloat 32
+    %v4float = OpTypeVector %float 4
+%_ptr_Output_v4float = OpTypePointer Output %v4float
+   %outColor = OpVariable %_ptr_Output_v4float Output
+         %11 = OpTypeImage %float SubpassData 0 0 0 2 Unknown
+%_ptr_UniformConstant_11 = OpTypePointer UniformConstant %11
+ %inputColor = OpVariable %_ptr_UniformConstant_11 UniformConstant
+        %int = OpTypeInt 32 1
+      %int_0 = OpConstant %int 0
+      %int_1 = OpConstant %int 1
+      %v2int = OpTypeVector %int 2
+    %v2int_1 = OpConstantComposite %v2int %int_1 %int_1
+       %main = OpFunction %void None %4
+          %6 = OpLabel
+         %14 = OpLoad %11 %inputColor
+         %19 = OpImageRead %v4float %14 %v2int_1
+               OpStore %outColor %19
+               OpReturn
+               OpFunctionEnd
+  )";
+
+  CompileSuccessfully(body.c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions(SPV_ENV_VULKAN_1_0));
+  EXPECT_THAT(getDiagnosticString(),
+              AnyVUID("VUID-StandaloneSpirv-SubpassData-04660"));
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("Expected Coordinate for a SubpassData image to be a "
+                        "OpConstantComposite of (0,0) or OpConstantNull"));
+}
+
+TEST_F(ValidateImage, SubpassDataNonConstant) {
+  const std::string body = R"(
+               OpCapability Shader
+               OpCapability InputAttachment
+          %2 = OpExtInstImport "GLSL.std.450"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %main "main" %_ %outColor %inputColor
+               OpExecutionMode %main OriginUpperLeft
+               OpDecorate %UBO Block
+               OpMemberDecorate %UBO 0 Offset 0
+               OpDecorate %_ Binding 0
+               OpDecorate %_ DescriptorSet 0
+               OpDecorate %outColor Location 0
+               OpDecorate %inputColor Binding 0
+               OpDecorate %inputColor DescriptorSet 0
+               OpDecorate %inputColor InputAttachmentIndex 0
+       %void = OpTypeVoid
+          %4 = OpTypeFunction %void
+       %uint = OpTypeInt 32 0
+     %v2uint = OpTypeVector %uint 2
+%_ptr_Function_v2uint = OpTypePointer Function %v2uint
+        %UBO = OpTypeStruct %v2uint
+%_ptr_Uniform_UBO = OpTypePointer Uniform %UBO
+          %_ = OpVariable %_ptr_Uniform_UBO Uniform
+        %int = OpTypeInt 32 1
+      %int_0 = OpConstant %int 0
+%_ptr_Uniform_v2uint = OpTypePointer Uniform %v2uint
+      %float = OpTypeFloat 32
+    %v4float = OpTypeVector %float 4
+%_ptr_Output_v4float = OpTypePointer Output %v4float
+   %outColor = OpVariable %_ptr_Output_v4float Output
+         %23 = OpTypeImage %float SubpassData 0 0 0 2 Unknown
+%_ptr_UniformConstant_23 = OpTypePointer UniformConstant %23
+ %inputColor = OpVariable %_ptr_UniformConstant_23 UniformConstant
+      %v2int = OpTypeVector %int 2
+       %main = OpFunction %void None %4
+          %6 = OpLabel
+          %x = OpVariable %_ptr_Function_v2uint Function
+         %17 = OpAccessChain %_ptr_Uniform_v2uint %_ %int_0
+         %18 = OpLoad %v2uint %17
+         %26 = OpLoad %23 %inputColor
+         %29 = OpImageRead %v4float %26 %18
+               OpStore %outColor %29
+               OpReturn
+               OpFunctionEnd
+  )";
+
+  CompileSuccessfully(body.c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions(SPV_ENV_VULKAN_1_0));
+  EXPECT_THAT(getDiagnosticString(),
+              AnyVUID("VUID-StandaloneSpirv-SubpassData-04660"));
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("Expected Coordinate for a SubpassData image to be a "
+                        "OpConstantComposite of (0,0) or OpConstantNull"));
+}
+
+// https://gitlab.khronos.org/spirv/SPIR-V/-/issues/766
+TEST_F(ValidateImage, WriteSignedExtendGood) {
+  const std::string body = R"(
+               OpCapability Shader
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint Fragment %main "main" %ii2D %ic2D
+               OpExecutionMode %main OriginUpperLeft
+               OpDecorate %ii2D Binding 0
+               OpDecorate %ii2D DescriptorSet 0
+               OpDecorate %ic2D Flat
+               OpDecorate %ic2D Location 0
+       %void = OpTypeVoid
+          %4 = OpTypeFunction %void
+        %int = OpTypeInt 32 1
+          %8 = OpTypeImage %int 2D 0 0 0 2 R32i
+%_ptr_UniformConstant_8 = OpTypePointer UniformConstant %8
+       %ii2D = OpVariable %_ptr_UniformConstant_8 UniformConstant
+      %v2int = OpTypeVector %int 2
+      %int_0 = OpConstant %int 0
+         %14 = OpConstantComposite %v2int %int_0 %int_0
+      %v4int = OpTypeVector %int 4
+         %16 = OpConstantComposite %v4int %int_0 %int_0 %int_0 %int_0
+%_ptr_Input_v2int = OpTypePointer Input %v2int
+       %ic2D = OpVariable %_ptr_Input_v2int Input
+       %main = OpFunction %void None %4
+          %6 = OpLabel
+         %11 = OpLoad %8 %ii2D
+               OpImageWrite %11 %14 %16 SignExtend
+               OpReturn
+               OpFunctionEnd
+  )";
+
+  CompileSuccessfully(body.c_str(), SPV_ENV_VULKAN_1_2);
+  ASSERT_EQ(SPV_SUCCESS, ValidateInstructions(SPV_ENV_VULKAN_1_2));
+}
+
+TEST_F(ValidateImage, TypeImageVulkanStorageNotFloat) {
+  const std::string code = GetShaderHeader() + R"(
+%img_type = OpTypeImage %f32 2D 0 0 0 2 R32i
+)" + TrivialMain();
+
+  CompileSuccessfully(code.c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions(SPV_ENV_VULKAN_1_0));
+  EXPECT_THAT(getDiagnosticString(),
+              AnyVUID("VUID-StandaloneSpirv-Image-04965"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr(
+          "Image Format type does not match Sample Type operand (float)"));
+}
+
+TEST_F(ValidateImage, TypeImageVulkanStorageNotInt) {
+  const std::string code = GetShaderHeader() + R"(
+%img_type = OpTypeImage %s32 2D 0 0 0 2 R32f
+)" + TrivialMain();
+
+  CompileSuccessfully(code.c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions(SPV_ENV_VULKAN_1_0));
+  EXPECT_THAT(getDiagnosticString(),
+              AnyVUID("VUID-StandaloneSpirv-Image-04965"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr(
+          "Image Format type does not match Sample Type operand (integer)"));
+}
+
+TEST_F(ValidateImage, TypeImageVulkanStorageNot64Width) {
+  const std::string code = GetShaderHeader(
+                               "OpCapability Int64ImageEXT\nOpExtension "
+                               "\"SPV_EXT_shader_image_int64\"\n") +
+                           R"(
+%img_type = OpTypeImage %s64 2D 0 0 0 2 R32i
+)" + TrivialMain();
+
+  CompileSuccessfully(code.c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions(SPV_ENV_VULKAN_1_0));
+  EXPECT_THAT(getDiagnosticString(),
+              AnyVUID("VUID-StandaloneSpirv-Image-04965"));
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("Image Format width does not match Sample Type operand "
+                        "(bit width of 64)"));
+}
+
+TEST_F(ValidateImage, TypeImageVulkanStorageNot32Width) {
+  const std::string code = GetShaderHeader(
+                               "OpCapability Int64ImageEXT\nOpExtension "
+                               "\"SPV_EXT_shader_image_int64\"\n") +
+                           R"(
+%img_type = OpTypeImage %s32 2D 0 0 0 2 R64i
+)" + TrivialMain();
+
+  CompileSuccessfully(code.c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions(SPV_ENV_VULKAN_1_0));
+  EXPECT_THAT(getDiagnosticString(),
+              AnyVUID("VUID-StandaloneSpirv-Image-04965"));
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("Image Format width does not match Sample Type operand "
+                        "(bit width of 32)"));
+}
+
+TEST_F(ValidateImage, TypeImageVulkanStorageNot64Signedness) {
+  const std::string code = R"(
+    OpCapability Shader
+    OpCapability Int64
+    OpCapability Int64ImageEXT
+    OpExtension "SPV_EXT_shader_image_int64"
+    OpMemoryModel Logical GLSL450
+    OpEntryPoint Fragment %main "main" %image_var
+    OpExecutionMode %main OriginUpperLeft
+    OpDecorate %image_var Location 0
+     %void = OpTypeVoid
+     %func = OpTypeFunction %void
+      %u32 = OpTypeInt 32 0
+      %s64 = OpTypeInt 64 1
+    %u32_0 = OpConstant %u32 0
+    %u32_1 = OpConstant %u32 1
+  %u32vec2 = OpTypeVector %u32 2
+  %s64vec4 = OpTypeVector %s64 4
+%u32vec2_01 = OpConstantComposite %u32vec2 %u32_0 %u32_1
+ %img_type = OpTypeImage %s64 2D 0 0 0 1 R64ui
+%ptr_image = OpTypePointer Input %img_type
+%image_var = OpVariable %ptr_image Input
+     %main = OpFunction %void None %func
+    %label = OpLabel
+      %img = OpLoad %img_type %image_var
+     %res1 = OpImageFetch %s64vec4 %img %u32vec2_01
+    OpReturn
+    OpFunctionEnd
+)";
+
+  CompileSuccessfully(code.c_str(), SPV_ENV_VULKAN_1_0);
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions(SPV_ENV_VULKAN_1_0));
+  EXPECT_THAT(getDiagnosticString(),
+              AnyVUID("VUID-StandaloneSpirv-Image-04965"));
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("Image Format signedness (unsigned) does not match "
+                        "Sample Type operand"));
+}
+
+TEST_F(ValidateImage, TypeImageVulkanStorageNot32Signedness) {
+  const std::string code = R"(
+    OpCapability Shader
+    OpMemoryModel Logical GLSL450
+    OpEntryPoint Fragment %main "main" %image_var
+    OpExecutionMode %main OriginUpperLeft
+    OpDecorate %image_var Location 0
+     %void = OpTypeVoid
+     %func = OpTypeFunction %void
+      %u32 = OpTypeInt 32 0
+    %u32_0 = OpConstant %u32 0
+    %u32_1 = OpConstant %u32 1
+  %u32vec2 = OpTypeVector %u32 2
+  %u32vec4 = OpTypeVector %u32 4
+%u32vec2_01 = OpConstantComposite %u32vec2 %u32_0 %u32_1
+ %img_type = OpTypeImage %u32 2D 0 0 0 1 R32i
+%ptr_image = OpTypePointer Input %img_type
+%image_var = OpVariable %ptr_image Input
+     %main = OpFunction %void None %func
+    %label = OpLabel
+      %img = OpLoad %img_type %image_var
+     %res1 = OpImageFetch %u32vec4 %img %u32vec2_01
+    OpReturn
+    OpFunctionEnd
+)";
+
+  CompileSuccessfully(code.c_str());
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions(SPV_ENV_VULKAN_1_0));
+  EXPECT_THAT(getDiagnosticString(),
+              AnyVUID("VUID-StandaloneSpirv-Image-04965"));
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("Image Format signedness (signed) does not match "
+                        "Sample Type operand"));
+}
+
+TEST_F(ValidateImage, TypeImageVulkanStorageSignExtendOverride) {
+  const std::string code = R"(
+    OpCapability Shader
+    OpMemoryModel Logical GLSL450
+    OpEntryPoint Fragment %main "main" %uniform_image
+    OpExecutionMode %main OriginUpperLeft
+    OpDecorate %uniform_image DescriptorSet 0
+    OpDecorate %uniform_image Binding 0
+     %void = OpTypeVoid
+     %func = OpTypeFunction %void
+      %u32 = OpTypeInt 32 0
+    %u32_0 = OpConstant %u32 0
+    %u32_1 = OpConstant %u32 1
+  %u32vec2 = OpTypeVector %u32 2
+  %u32vec4 = OpTypeVector %u32 4
+%u32vec2_01 = OpConstantComposite %u32vec2 %u32_0 %u32_1
+ %img_type = OpTypeImage %u32 2D 0 0 0 1 R32i
+%ptr_image = OpTypePointer UniformConstant %img_type
+%uniform_image = OpVariable %ptr_image UniformConstant
+     %main = OpFunction %void None %func
+    %label = OpLabel
+      %img = OpLoad %img_type %uniform_image
+     %res1 = OpImageFetch %u32vec4 %img %u32vec2_01 SignExtend
+    OpReturn
+    OpFunctionEnd
+)";
+
+  CompileSuccessfully(code.c_str(), SPV_ENV_VULKAN_1_2);
+  ASSERT_EQ(SPV_SUCCESS, ValidateInstructions(SPV_ENV_VULKAN_1_2));
+}
+
+TEST_F(ValidateImage, TypeImageVulkanStorageUintToSint) {
+  const std::string code = R"(
+                     OpCapability Shader
+                     OpCapability StorageImageExtendedFormats
+                     OpMemoryModel Logical GLSL450
+                     OpEntryPoint GLCompute %main "main" %image_ptr
+                     OpExecutionMode %main LocalSize 1 1 1
+                     OpSource GLSL 450
+                     OpDecorate %image_ptr DescriptorSet 0
+                     OpDecorate %image_ptr Binding 0
+                     OpDecorate %image_ptr NonReadable
+%type_void         = OpTypeVoid
+%type_u32          = OpTypeInt 32 0
+%type_i32          = OpTypeInt 32 1
+%type_vec3_u32     = OpTypeVector %type_u32 3
+%type_vec4_u32     = OpTypeVector %type_u32 4
+%type_vec2_i32     = OpTypeVector %type_i32 2
+%type_fn_void      = OpTypeFunction %type_void
+%type_ptr_fn       = OpTypePointer Function %type_vec4_u32
+%type_image        = OpTypeImage %type_u32 2D 0 0 0 2 Rgba32ui
+%type_ptr_image    = OpTypePointer UniformConstant %type_image
+%image_ptr         = OpVariable %type_ptr_image UniformConstant
+%const_i32_0       = OpConstant %type_i32 0
+%const_vec2_i32_00 = OpConstantComposite %type_vec2_i32 %const_i32_0 %const_i32_0
+%main              = OpFunction %type_void None %type_fn_void
+%label             = OpLabel
+%store_location    = OpVariable %type_ptr_fn Function
+%image             = OpLoad %type_image %image_ptr
+%value             = OpImageRead %type_vec4_u32 %image %const_vec2_i32_00 SignExtend
+                     OpStore %store_location %value
+                     OpReturn
+                     OpFunctionEnd
+)";
+
+  CompileSuccessfully(code.c_str(), SPV_ENV_VULKAN_1_2);
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions(SPV_ENV_VULKAN_1_2));
+  EXPECT_THAT(getDiagnosticString(),
+              AnyVUID("VUID-StandaloneSpirv-Image-04965"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Image Format signedness (unsigned) does not match Sample Type "
+                "operand (SignExtend makes the access as signed)"));
+}
+
+TEST_F(ValidateImage, TypeImageVulkanStorageSintToUint) {
+  const std::string code = R"(
+                     OpCapability Shader
+                     OpCapability StorageImageExtendedFormats
+                     OpMemoryModel Logical GLSL450
+                     OpEntryPoint GLCompute %main "main" %image_ptr
+                     OpExecutionMode %main LocalSize 1 1 1
+                     OpSource GLSL 450
+                     OpDecorate %image_ptr DescriptorSet 0
+                     OpDecorate %image_ptr Binding 0
+                     OpDecorate %image_ptr NonReadable
+%type_void         = OpTypeVoid
+%type_u32          = OpTypeInt 32 0
+%type_i32          = OpTypeInt 32 1
+%type_vec3_u32     = OpTypeVector %type_u32 3
+%type_vec4_u32     = OpTypeVector %type_u32 4
+%type_vec2_i32     = OpTypeVector %type_i32 2
+%type_fn_void      = OpTypeFunction %type_void
+%type_ptr_fn       = OpTypePointer Function %type_vec4_u32
+%type_image        = OpTypeImage %type_u32 2D 0 0 0 2 Rgba32i
+%type_ptr_image    = OpTypePointer UniformConstant %type_image
+%image_ptr         = OpVariable %type_ptr_image UniformConstant
+%const_i32_0       = OpConstant %type_i32 0
+%const_vec2_i32_00 = OpConstantComposite %type_vec2_i32 %const_i32_0 %const_i32_0
+%main              = OpFunction %type_void None %type_fn_void
+%label             = OpLabel
+%store_location    = OpVariable %type_ptr_fn Function
+%image             = OpLoad %type_image %image_ptr
+%value             = OpImageRead %type_vec4_u32 %image %const_vec2_i32_00 ZeroExtend
+                     OpStore %store_location %value
+                     OpReturn
+                     OpFunctionEnd
+)";
+
+  CompileSuccessfully(code.c_str(), SPV_ENV_VULKAN_1_2);
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions(SPV_ENV_VULKAN_1_2));
+  EXPECT_THAT(getDiagnosticString(),
+              AnyVUID("VUID-StandaloneSpirv-Image-04965"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Image Format signedness (signed) does not match Sample Type "
+                "operand (ZeroExtend makes the access as unsigned)"));
+}
+
+TEST_F(ValidateImage, TypeImageVulkanStorageZeroExtendSigned) {
+  const std::string code = R"(
+    OpCapability Shader
+    OpMemoryModel Logical GLSL450
+    OpEntryPoint Fragment %main "main" %uniform_image
+    OpExecutionMode %main OriginUpperLeft
+    OpDecorate %uniform_image DescriptorSet 0
+    OpDecorate %uniform_image Binding 0
+     %void = OpTypeVoid
+     %func = OpTypeFunction %void
+      %i32 = OpTypeInt 32 1
+      %u32 = OpTypeInt 32 0
+    %u32_0 = OpConstant %u32 0
+    %u32_1 = OpConstant %u32 1
+  %u32vec2 = OpTypeVector %u32 2
+  %i32vec4 = OpTypeVector %i32 4
+%u32vec2_01 = OpConstantComposite %u32vec2 %u32_0 %u32_1
+ %img_type = OpTypeImage %i32 2D 0 0 0 2 R32ui
+%ptr_image = OpTypePointer UniformConstant %img_type
+%uniform_image = OpVariable %ptr_image UniformConstant
+     %main = OpFunction %void None %func
+    %label = OpLabel
+      %img = OpLoad %img_type %uniform_image
+     %res1 = OpImageRead %i32vec4 %img %u32vec2_01 ZeroExtend
+       OpReturn
+    OpFunctionEnd
+)";
+
+  CompileSuccessfully(code.c_str(), SPV_ENV_VULKAN_1_2);
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions(SPV_ENV_VULKAN_1_2));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Using ZeroExtend, but result type is a signed integer type"));
+}
+
+TEST_F(ValidateImage, TypeImageVulkanStorageZeroExtendRedundant) {
+  // use ZeroExtend when sample type is already unsigned but still has signed
+  // format
+  const std::string code = R"(
+    OpCapability Shader
+    OpMemoryModel Logical GLSL450
+    OpEntryPoint Fragment %main "main" %uniform_image
+    OpExecutionMode %main OriginUpperLeft
+    OpDecorate %uniform_image DescriptorSet 0
+    OpDecorate %uniform_image Binding 0
+     %void = OpTypeVoid
+     %func = OpTypeFunction %void
+      %u32 = OpTypeInt 32 0
+    %u32_0 = OpConstant %u32 0
+    %u32_1 = OpConstant %u32 1
+  %u32vec2 = OpTypeVector %u32 2
+  %u32vec4 = OpTypeVector %u32 4
+%u32vec2_01 = OpConstantComposite %u32vec2 %u32_0 %u32_1
+ %img_type = OpTypeImage %u32 2D 0 0 0 1 R32i
+%ptr_image = OpTypePointer UniformConstant %img_type
+%uniform_image = OpVariable %ptr_image UniformConstant
+     %main = OpFunction %void None %func
+    %label = OpLabel
+      %img = OpLoad %img_type %uniform_image
+     %res1 = OpImageFetch %u32vec4 %img %u32vec2_01 ZeroExtend
+    OpReturn
+    OpFunctionEnd
+)";
+
+  CompileSuccessfully(code.c_str(), SPV_ENV_VULKAN_1_2);
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions(SPV_ENV_VULKAN_1_2));
+  EXPECT_THAT(getDiagnosticString(),
+              AnyVUID("VUID-StandaloneSpirv-Image-04965"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Image Format signedness (signed) does not match Sample Type "
+                "operand (ZeroExtend makes the access as unsigned)"));
+}
+
+// TODO - Need to validate in ValidateImageOperands()
+TEST_F(ValidateImage, DISABLED_TypeImageVulkanStorageZeroExtendFloat) {
+  // use ZeroExtend on Float image
+  const std::string code = R"(
+            OpCapability Shader
+            OpCapability StorageImageWriteWithoutFormat
+            OpMemoryModel Logical GLSL450
+            OpEntryPoint GLCompute %main "main" %var
+            OpExecutionMode %main LocalSize 1 1 1
+            OpDecorate %var DescriptorSet 0
+            OpDecorate %var Binding 0
+            OpDecorate %var NonReadable
+    %void = OpTypeVoid
+    %func = OpTypeFunction %void
+    %int = OpTypeInt 32 1
+    %float = OpTypeFloat 32
+    %image = OpTypeImage %float 2D 0 0 0 2 Unknown
+    %ptr = OpTypePointer UniformConstant %image
+    %var = OpVariable %ptr UniformConstant
+    %v2int = OpTypeVector %int 2
+    %int_1 = OpConstant %int 1
+    %coord = OpConstantComposite %v2int %int_1 %int_1
+    %v3float = OpTypeVector %float 3
+    %float_1 = OpConstant %float 1
+%texelU3 = OpConstantComposite %v3float %float_1 %float_1 %float_1
+    %main = OpFunction %void None %func
+    %label = OpLabel
+    %load = OpLoad %image %var
+            OpImageWrite %load %coord %texelU3 ZeroExtend
+            OpReturn
+            OpFunctionEnd
+)";
+
+  CompileSuccessfully(code.c_str(), SPV_ENV_VULKAN_1_2);
+  ASSERT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions(SPV_ENV_VULKAN_1_2));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Using ZeroExtend, but result type is a signed integer type."));
 }
 
 }  // namespace

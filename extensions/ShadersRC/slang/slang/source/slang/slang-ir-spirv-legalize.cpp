@@ -4,7 +4,6 @@
 #include "slang-emit-base.h"
 #include "slang-ir-call-graph.h"
 #include "slang-ir-clone.h"
-#include "slang-ir-composite-reg-to-mem.h"
 #include "slang-ir-dce.h"
 #include "slang-ir-dominators.h"
 #include "slang-ir-float-non-uniform-resource-index.h"
@@ -27,6 +26,7 @@
 #include "slang-ir-validate.h"
 #include "slang-ir.h"
 #include "slang-legalize-types.h"
+#include "slang-rich-diagnostics.h"
 
 namespace Slang
 {
@@ -236,7 +236,14 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
             {
                 builder.setInsertBefore(use->getUser());
                 auto addr = builder.emitFieldAddress(
-                    builder.getPtrType(innerType, AccessQualifier::Read, AddressSpace::Uniform),
+                    builder.getPtrType(
+                        innerType,
+                        AccessQualifier::Read,
+                        AddressSpace::Uniform,
+                        getTypeLayoutTypeForBuffer(
+                            m_sharedContext->m_targetProgram,
+                            builder,
+                            cbParamInst->getDataType())),
                     cbParamInst,
                     key);
                 use->set(addr);
@@ -437,11 +444,14 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
 
             // Strip any HLSL wrappers
             IRBuilder builder(m_sharedContext->m_irModule);
+            IRType* dataLayout = builder.getDefaultBufferLayoutType();
             auto cbufferType = as<IRConstantBufferType>(innerType);
             auto paramBlockType = as<IRParameterBlockType>(innerType);
             if (cbufferType || paramBlockType)
             {
-                innerType = as<IRUniformParameterGroupType>(innerType)->getElementType();
+                auto uniformParamGroupType = as<IRUniformParameterGroupType>(innerType);
+                innerType = uniformParamGroupType->getElementType();
+                dataLayout = uniformParamGroupType->getDataLayout();
                 if (addressSpace == AddressSpace::ThreadLocal)
                     addressSpace = AddressSpace::Uniform;
                 // Constant buffer is already treated like a pointer type, and
@@ -497,6 +507,7 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
             {
                 innerType = lowerStructuredBufferType(structuredBufferType).structType;
                 addressSpace = getStorageBufferAddressSpace();
+                dataLayout = structuredBufferType->getDataLayout();
                 needLoad = false;
 
                 auto memoryFlags = MemoryQualifierSetModifier::Flags::kNone;
@@ -517,6 +528,7 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
                 auto glslShaderStorageBufferType = as<IRGLSLShaderStorageBufferType>(innerType))
             {
                 innerType = glslShaderStorageBufferType->getElementType();
+                dataLayout = glslShaderStorageBufferType->getDataLayout();
                 if (m_sharedContext->isSpirv14OrLater())
                 {
                     builder.addDecorationIfNotExist(innerType, kIROp_SPIRVBlockDecoration);
@@ -543,7 +555,7 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
 
             // Make a pointer type of storageClass.
             builder.setInsertBefore(inst);
-            ptrType = builder.getPtrType(innerType, access, addressSpace);
+            ptrType = builder.getPtrType(innerType, access, addressSpace, dataLayout);
             inst->setFullType(ptrType);
             if (needLoad)
             {
@@ -569,7 +581,8 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
                                 builder.getPtrType(
                                     innerElementType,
                                     ptrType->getAccessQualifier(),
-                                    addressSpace),
+                                    addressSpace,
+                                    dataLayout),
                                 inst,
                                 getElement->getIndex());
                             user->replaceUsesWith(newAddr);
@@ -706,7 +719,8 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
                 oldPtrType->getOp(),
                 oldPtrType->getValueType(),
                 oldPtrType->getAccessQualifier(),
-                AddressSpace::Function);
+                AddressSpace::Function,
+                oldPtrType->getDataLayout());
             inst->setFullType(newPtrType);
             addUsersToWorkList(inst);
         }
@@ -746,10 +760,12 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
                         if (addressSpace == AddressSpace::Generic)
                             addressSpace = argPtrType->getAddressSpace();
                         else if (addressSpace != argPtrType->getAddressSpace())
+                        {
                             m_sharedContext->m_sink->diagnose(
-                                inst,
-                                Diagnostics::inconsistentPointerAddressSpace,
-                                inst);
+                                Diagnostics::InconsistentPointerAddressSpace{
+                                    .inst = inst,
+                                    .location = inst->sourceLoc});
+                        }
                     }
                 }
             }
@@ -761,7 +777,8 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
                     oldPtrType->getOp(),
                     oldPtrType->getValueType(),
                     oldPtrType->getAccessQualifier(),
-                    AddressSpace::UserPointer);
+                    AddressSpace::UserPointer,
+                    oldPtrType->getDataLayout());
                 inst->setFullType(newPtrType);
                 addUsersToWorkList(inst);
             }
@@ -836,7 +853,8 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
             oldPtrType->getOp(),
             oldPtrType->getValueType(),
             oldPtrType->getAccessQualifier(),
-            addressSpace);
+            addressSpace,
+            oldPtrType->getDataLayout());
         inst->setFullType(newPtrType);
         addUsersToWorkList(inst);
         return;
@@ -1060,7 +1078,8 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
                     oldResultType->getOp(),
                     oldResultType->getValueType(),
                     ptrType->getAccessQualifier(),
-                    ptrType->getAddressSpace());
+                    ptrType->getAddressSpace(),
+                    ptrType->getDataLayout());
                 IRInst* args[2] = {base, index};
                 auto newInst = builder.emitIntrinsicInst(newPtrType, gepInst->getOp(), 2, args);
                 gepInst->replaceUsesWith(newInst);
@@ -1114,7 +1133,8 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
                 resultPtrType->getOp(),
                 resultPtrType->getValueType(),
                 ptrOperandType->getAccessQualifier(),
-                ptrOperandType->getAddressSpace());
+                ptrOperandType->getAddressSpace(),
+                ptrOperandType->getDataLayout());
             auto newInst = builder.replaceOperand(&offsetPtrInst->typeUse, newResultType);
             addUsersToWorkList(newInst);
         }
@@ -1171,8 +1191,11 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
                 return;
             IRBuilder builder(m_sharedContext->m_irModule);
             builder.setInsertBefore(subscript);
-            auto newPtrType =
-                builder.getPtrType(ptrType->getOp(), ptrType->getValueType(), AddressSpace::Image);
+            auto newPtrType = builder.getPtrType(
+                ptrType->getOp(),
+                ptrType->getValueType(),
+                AddressSpace::Image,
+                ptrType->getDataLayout());
             subscript->setFullType(newPtrType);
 
             // HACK: assumes the image operand is a load and replace it with
@@ -1182,9 +1205,24 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
             // image operand here.
             auto image = subscript->getImage();
             if (auto load = as<IRLoad>(image))
+            {
                 subscript->setOperand(0, load->getPtr());
-
-            addUsersToWorkList(subscript);
+                addUsersToWorkList(subscript);
+            }
+            else if (auto loadDescriptor = as<IRSPIRVLoadDescriptorFromHeap>(image))
+            {
+                auto texelPtr = builder.emitSPIRVLoadTexelPointerFromHeap(
+                    newPtrType,
+                    loadDescriptor->getHeap(),
+                    loadDescriptor->getIndex(),
+                    loadDescriptor->getDataType(),
+                    subscript->getCoord(),
+                    subscript->hasSampleCoord() ? subscript->getSampleCoord()
+                                                : builder.getIntValue(builder.getIntType(), 0));
+                subscript->replaceUsesWith(texelPtr);
+                subscript->removeAndDeallocate();
+                addUsersToWorkList(texelPtr);
+            }
         }
     }
 
@@ -1207,7 +1245,8 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
                     oldResultType->getOp(),
                     newValueType,
                     ptrType->getAccessQualifier(),
-                    ptrType->getAddressSpace());
+                    ptrType->getAddressSpace(),
+                    ptrType->getDataLayout());
                 auto newInst =
                     builder.emitFieldAddress(newPtrType, inst->getBase(), inst->getField());
                 inst->replaceUsesWith(newInst);
@@ -1454,6 +1493,44 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
         inst->insertAtEnd(m_module->getModuleInst());
     }
 
+    void processDefaultConstruct(IRInst* inst)
+    {
+        // Handle DefaultConstruct for DescriptorHandleType.
+        // In SPIRV, DescriptorHandle is lowered to uint64 (spvBindlessTextureNV) or uint2.
+        // A default-constructed handle should be a zero value.
+        auto type = inst->getDataType();
+        if (type && type->getOp() == kIROp_DescriptorHandleType)
+        {
+            IRBuilder builder(m_module);
+            builder.setInsertBefore(inst);
+            auto targetCaps = m_sharedContext->m_targetProgram->getTargetReq()->getTargetCaps();
+
+            IRInst* castInst = nullptr;
+            if (targetCaps.implies(CapabilityAtom::spvBindlessTextureNV))
+            {
+                // spvBindlessTextureNV: DescriptorHandle is uint64_t
+                auto uint64Type = builder.getUInt64Type();
+                auto zero64 = builder.getIntValue(uint64Type, 0);
+                castInst =
+                    builder.emitIntrinsicInst(type, kIROp_CastUInt64ToDescriptorHandle, 1, &zero64);
+            }
+            else
+            {
+                // Default: DescriptorHandle is uint2
+                auto uint32Type = builder.getUIntType();
+                auto zero = builder.getIntValue(uint32Type, 0);
+                auto vecType =
+                    builder.getVectorType(uint32Type, builder.getIntValue(builder.getIntType(), 2));
+                auto zeroVec =
+                    builder.emitIntrinsicInst(vecType, kIROp_MakeVectorFromScalar, 1, &zero);
+                castInst =
+                    builder.emitIntrinsicInst(type, kIROp_CastUInt2ToDescriptorHandle, 1, &zeroVec);
+            }
+            inst->replaceUsesWith(castInst);
+            inst->removeAndDeallocate();
+        }
+    }
+
     void processConstructor(IRInst* inst)
     {
         maybeHoistConstructInstToGlobalScope(inst);
@@ -1488,6 +1565,31 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
             auto newMakeVector = builder.emitMakeVector(inst->getDataType(), args);
             inst->replaceUsesWith(newMakeVector);
         }
+    }
+
+    void processMakeCombinedTextureSamplerFromHandle(IRInst* inst)
+    {
+        // Rewrite `MakeCombinedTextureSamplerFromHandle(uint2_handle)` to
+        // `MakeCombinedTextureSampler(
+        //      LoadDescriptorFromHeap(ResourceHeap, uint2_handle.x),
+        //      LoadDescriptorFromHeap(SamplerHeap, uint2_handle.y))`
+        auto textureType = getTextureTypeFromCombinedTextureSampler(inst->getDataType());
+        auto samplerType = getSamplerTypeFromCombinedTextureSampler(inst->getDataType());
+
+        IRBuilder builder(inst);
+        builder.setInsertBefore(inst);
+        auto texture = builder.emitLoadDescriptorFromHeap(
+            textureType,
+            builder.emitSPIRVResourceDescriptorHeap(),
+            builder.emitElementExtract(inst->getOperand(0), IRIntegerValue(0)));
+        auto sampler = builder.emitLoadDescriptorFromHeap(
+            samplerType,
+            builder.emitSPIRVSamplerDescriptorHeap(),
+            builder.emitElementExtract(inst->getOperand(0), IRIntegerValue(1)));
+        auto newInst =
+            builder.emitMakeCombinedTextureSampler(inst->getDataType(), texture, sampler);
+        inst->replaceUsesWith(newInst);
+        inst->removeAndDeallocate();
     }
 
     static bool isAsmInst(IRInst* inst)
@@ -1637,7 +1739,9 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
 
         // `this` of the functor is optional.
         // Skip the synthesis if `this` is not passed.
-        if (ifuncCall->getParamCount() > 3)
+        // If `this` parameter is present, then the first parameter of the functor should be
+        // a struct instead of an int.
+        if (inst->hasIFuncThis())
         {
             auto funcSynth = createWrapperFunctionForPerElement(builder, ifuncCall);
             inst->setIFuncCall(funcSynth);
@@ -1675,7 +1779,26 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
     {
         bool isLegalGlobalInstForTarget(IRInst* inst) override
         {
-            return as<IRSPIRVAsmOperand>(inst);
+            // Spec-const-rate instructions must stay at their current scope
+            // (module level or inside a generic) because SPIR-V requires
+            // OpSpecConstantOp results to appear outside function bodies.
+            // Only ops validated by canOperationBeSpecConst (via
+            // shouldHaveSpecConstRate in _createInst) acquire this rate.
+            if (isSpecConstRateType(inst->getFullType()))
+                return true;
+            switch (inst->getOp())
+            {
+            case kIROp_MakeStruct:
+            case kIROp_MakeArray:
+            case kIROp_MakeArrayFromElement:
+            case kIROp_MakeVector:
+            case kIROp_MakeMatrix:
+            case kIROp_MakeMatrixFromScalar:
+            case kIROp_MakeVectorFromScalar:
+                return true;
+            default:
+                return as<IRSPIRVAsmOperand>(inst);
+            };
         }
 
         bool isInlinableGlobalInstForTarget(IRInst* inst) override
@@ -1758,6 +1881,44 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
             inst = builder.replaceOperand(inst->getOperands(), newOperand0);
             inst = builder.replaceOperand(inst->getOperands() + 1, newOperand1);
         }
+    }
+
+    void emitPerMemberDebugValue(IRBuilder& builder, IRInst* debugVar, IRInst* value)
+    {
+        auto valueType = as<IRType>(unwrapAttributedType(value->getDataType()));
+        if (auto structType = as<IRStructType>(valueType))
+        {
+            for (auto field : structType->getFields())
+            {
+                auto fieldDebugVar = builder.emitFieldAddress(debugVar, field->getKey());
+                auto fieldValue =
+                    builder.emitFieldExtract(field->getFieldType(), value, field->getKey());
+                emitPerMemberDebugValue(builder, fieldDebugVar, fieldValue);
+            }
+            return;
+        }
+
+        auto debugValue = builder.emitDebugValue(debugVar, value);
+        addToWorkList(debugValue);
+    }
+
+    void processDebugValue(IRDebugValue* inst)
+    {
+        auto valueType = as<IRType>(unwrapAttributedType(inst->getValue()->getDataType()));
+        if (as<IRStructType>(valueType))
+        {
+            // Decompose the struct into per-member DebugValue updates to help
+            // shader debuggers resolve the struct value.
+            IRBuilder builder(inst);
+            builder.setInsertBefore(inst);
+            emitPerMemberDebugValue(builder, inst->getDebugVar(), inst->getValue());
+            inst->removeAndDeallocate();
+            return;
+        }
+
+        // Unsupported type, remove the DebugValue.
+        if (!isSimpleDataType(valueType))
+            inst->removeAndDeallocate();
     }
 
     List<IRInst*> m_instsToRemove;
@@ -1866,8 +2027,14 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
             case kIROp_MakeOptionalNone:
                 processConstructor(inst);
                 break;
+            case kIROp_MakeCombinedTextureSamplerFromHandle:
+                processMakeCombinedTextureSamplerFromHandle(inst);
+                break;
             case kIROp_PtrLit:
                 processPtrLit(inst);
+                break;
+            case kIROp_DefaultConstruct:
+                processDefaultConstruct(inst);
                 break;
             // kIROp_UnconditionalBranch is handled in default case that only
             // adds children inst and not target inst to work list.
@@ -1886,8 +2053,7 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
                 break;
 
             case kIROp_DebugValue:
-                if (!isSimpleDataType(as<IRDebugValue>(inst)->getDebugVar()->getDataType()))
-                    inst->removeAndDeallocate();
+                processDebugValue(as<IRDebugValue>(inst));
                 break;
             case kIROp_DebugVar:
                 if (!isSimpleDataType(as<IRDebugVar>(inst)->getDataType()))
@@ -1905,6 +2071,58 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
                     addToWorkList(child);
                 }
                 break;
+            }
+        }
+    }
+
+    // Ensure NonUniform decoration is present on both access-chain ops and their index operands.
+    // This fills gaps after legalization where only the access-chain inst was decorated.
+    void propagateNonUniformAccessChainDecorations()
+    {
+        for (auto globalInst : m_module->getGlobalInsts())
+        {
+            auto func = as<IRFunc>(globalInst);
+            if (!func)
+                continue;
+
+            for (auto block : func->getBlocks())
+            {
+                for (auto inst : block->getChildren())
+                {
+                    IRInst* indexOperand = nullptr;
+                    switch (inst->getOp())
+                    {
+                    case kIROp_GetElement:
+                        indexOperand = inst->getOperand(1);
+                        break;
+                    case kIROp_GetElementPtr:
+                        indexOperand = inst->getOperand(1);
+                        break;
+                    case kIROp_RWStructuredBufferGetElementPtr:
+                        indexOperand = inst->getOperand(1);
+                        break;
+                    default:
+                        break;
+                    }
+
+                    if (!indexOperand)
+                        continue;
+
+                    auto indexDecorated =
+                        indexOperand->findDecoration<IRSPIRVNonUniformResourceDecoration>() !=
+                        nullptr;
+                    auto instDecorated =
+                        inst->findDecoration<IRSPIRVNonUniformResourceDecoration>() != nullptr;
+                    if (!indexDecorated && !instDecorated)
+                        continue;
+
+                    IRBuilder builder(inst);
+                    builder.setInsertBefore(inst);
+                    if (!indexDecorated)
+                        builder.addSPIRVNonUniformResourceDecoration(indexOperand);
+                    if (!instDecorated)
+                        builder.addSPIRVNonUniformResourceDecoration(inst);
+                }
             }
         }
     }
@@ -2009,7 +2227,7 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
         {
             // Direct SPIRV backend does not support generating SPIRV before 1.3,
             // we will issue an error message here.
-            m_sharedContext->m_sink->diagnose(SourceLoc(), Diagnostics::spirvVersionNotSupported);
+            m_sharedContext->m_sink->diagnose(Diagnostics::SpirvVersionNotSupported{});
         }
     }
 
@@ -2167,6 +2385,26 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
         }
     }
 
+    // Recursively looks for member structs that have the Block / BufferBlock
+    // decoration.
+    void findEmbeddedBlockStructs(IRType* type, HashSet<IRStructType*>& embeddedBlockStructs)
+    {
+        if (auto structType = as<IRStructType>(type))
+        {
+            if (structType->findDecorationImpl(kIROp_SPIRVBlockDecoration) ||
+                structType->findDecorationImpl(kIROp_SPIRVBufferBlockDecoration))
+            {
+                embeddedBlockStructs.add(structType);
+            }
+            for (auto field : structType->getFields())
+                findEmbeddedBlockStructs(field->getFieldType(), embeddedBlockStructs);
+        }
+        else if (auto arrayType = as<IRArrayType>(type))
+        {
+            findEmbeddedBlockStructs(arrayType->getElementType(), embeddedBlockStructs);
+        }
+    }
+
     void legalizeStructBlocks()
     {
         // SPIRV does not allow using a struct with a block declaration as a field
@@ -2177,21 +2415,15 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
 
         HashSet<IRStructType*> embeddedBlockStructs;
         List<IRGlobalParam*> structGlobalParams;
+
         for (auto globalInst : m_module->getGlobalInsts())
         {
             if (auto outerStruct = as<IRStructType>(globalInst))
             {
+                // This search needs to be done recursively in order to find
+                // structs nested deeper than one layer.
                 for (auto field : outerStruct->getFields())
-                {
-                    if (auto innerStruct = as<IRStructType>(field->getFieldType()))
-                    {
-                        if (innerStruct->findDecorationImpl(kIROp_SPIRVBlockDecoration) ||
-                            innerStruct->findDecorationImpl(kIROp_SPIRVBufferBlockDecoration))
-                        {
-                            embeddedBlockStructs.add(innerStruct);
-                        }
-                    }
-                }
+                    findEmbeddedBlockStructs(field->getFieldType(), embeddedBlockStructs);
             }
             else if (auto globalParam = as<IRGlobalParam>(globalInst))
             {
@@ -2311,11 +2543,13 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
                 accessQualifier = AccessQualifier::Immutable;
 
             IRBuilder builder(t);
+
             builder.setInsertBefore(t);
             t->replaceUsesWith(builder.getPtrType(
                 lowered.structType,
                 accessQualifier,
-                getStorageBufferAddressSpace()));
+                getStorageBufferAddressSpace(),
+                t->getDataLayout()));
         }
         for (auto t : textureFootprintTypes)
         {
@@ -2366,6 +2600,8 @@ struct SPIRVLegalizationContext : public SourceEmitterBase
         // Inline all pack/unpack storage type functions generated during buffer element
         // lowering pass.
         performForceInlining(m_module);
+
+        propagateNonUniformAccessChainDecorations();
 
         // The above step may produce empty struct types, so we need to lower them out of
         // existence.
@@ -2448,7 +2684,9 @@ SpvSnippet* SPIRVEmitSharedContext::getParsedSpvSnippet(IRTargetIntrinsicDecorat
     snippet = SpvSnippet::parse(*m_grammarInfo, intrinsic->getDefinition());
     if (!snippet)
     {
-        m_sink->diagnose(intrinsic, Diagnostics::snippetParsingFailed, intrinsic->getDefinition());
+        m_sink->diagnose(Diagnostics::SnippetParsingFailed{
+            .snippet = intrinsic->getDefinition(),
+            .location = intrinsic->sourceLoc});
         return nullptr;
     }
     m_parsedSpvSnippets[intrinsic] = snippet;
@@ -2598,6 +2836,102 @@ void insertFragmentShaderInterlock(SPIRVEmitSharedContext* context, IRModule* mo
     }
 }
 
+// For SPIRV versions that emit discard as OpKill (a terminator), we need to
+// handle unreachable code after discard. Since OpKill terminates execution,
+// any code after it is unreachable. We replace the block's terminator with
+// unreachable and remove intermediate instructions.
+//
+// This applies when shouldEmitDiscardAsDemote() returns false, meaning:
+// - SPIRV version is < 1.6 AND
+// - The SPV_EXT_demote_to_helper_invocation extension is not being used
+//
+// In these cases, discard becomes OpKill which is a terminator instruction.
+// For SPIRV 1.6+ or with the demote extension, discard becomes
+// OpDemoteToHelperInvocation which is NOT a terminator, so code can continue.
+static void removeUnreachableCodeAfterDiscardForOpKill(
+    SPIRVEmitSharedContext* context,
+    IRModule* module)
+{
+    // If discard will be emitted as OpDemoteToHelperInvocation (not a terminator),
+    // we don't need to remove code after it
+    if (context->shouldEmitDiscardAsDemote())
+        return;
+
+    IRBuilder builder(module);
+
+    for (auto globalInst : module->getGlobalInsts())
+    {
+        if (auto func = as<IRGlobalValueWithCode>(globalInst))
+        {
+            for (auto block : func->getBlocks())
+            {
+                // Find if there's a discard in this block
+                IRInst* discardInst = nullptr;
+                for (auto inst : block->getOrdinaryInsts())
+                {
+                    if (inst->getOp() == kIROp_Discard)
+                    {
+                        discardInst = inst;
+                        break;
+                    }
+                }
+
+                if (!discardInst)
+                    continue;
+
+                // Get the block's terminator
+                auto terminator = block->getTerminator();
+                if (!terminator)
+                    continue;
+
+                // Check if there are instructions between discard and terminator
+                bool hasInstructionsBetween = false;
+                bool foundDiscard = false;
+                for (auto inst : block->getOrdinaryInsts())
+                {
+                    if (foundDiscard && inst != terminator)
+                    {
+                        hasInstructionsBetween = true;
+                        break;
+                    }
+                    else if (inst == discardInst)
+                    {
+                        foundDiscard = true;
+                    }
+                }
+
+                if (!hasInstructionsBetween)
+                    continue;
+
+                // Remove all instructions after discard and replace terminator with unreachable
+                List<IRInst*> toRemove;
+                foundDiscard = false;
+                for (auto inst : block->getOrdinaryInsts())
+                {
+                    if (foundDiscard)
+                    {
+                        toRemove.add(inst);
+                    }
+                    else if (inst == discardInst)
+                    {
+                        foundDiscard = true;
+                    }
+                }
+
+                // Remove the collected instructions
+                for (auto inst : toRemove)
+                {
+                    inst->removeAndDeallocate();
+                }
+
+                // Add unreachable terminator after discard
+                builder.setInsertAfter(discardInst);
+                builder.emitUnreachable();
+            }
+        }
+    }
+}
+
 void legalizeIRForSPIRV(
     SPIRVEmitSharedContext* context,
     IRModule* module,
@@ -2607,6 +2941,16 @@ void legalizeIRForSPIRV(
     SLANG_UNUSED(entryPoints);
     legalizeSPIRV(context, module, codeGenContext);
     simplifyIRForSpirvLegalization(context->m_targetProgram, codeGenContext->getSink(), module);
+
+    // Remove unreachable code after discard for SPIRV versions that emit OpKill.
+    // This is necessary because OpKill is a terminator and cannot have instructions
+    // after it in the same block. This only applies when targeting SPIRV < 1.6
+    // without the SPV_EXT_demote_to_helper_invocation extension.
+    removeUnreachableCodeAfterDiscardForOpKill(context, module);
+
+    // Run DCE to clean up any values that became unused after removing unreachable code
+    eliminateDeadCode(module);
+
     buildEntryPointReferenceGraph(context->m_referencingEntryPoints, module);
     insertFragmentShaderInterlock(context, module);
 }

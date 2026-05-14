@@ -36,16 +36,15 @@ project(glslang)
 set(GLSLANG_TESTS_DEFAULT ON) # Can be turned off, below, based on environment.
 set(GLSLANG_ENABLE_INSTALL_DEFAULT ON) # Can be turned off, below, based on environment.
 
-set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+set_property(GLOBAL PROPERTY USE_FOLDERS ON) # Can be removed when min is 3.26 see policy CMP0143.
 
 # Adhere to GNU filesystem layout conventions
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
-# Needed for CMAKE_DEPENDENT_OPTION macro
+# Needed for cmake_dependent_option macro
 include(CMakeDependentOption)
 
-option(BUILD_SHARED_LIBS "Build Shared Libraries")
 option(BUILD_EXTERNAL "Build external dependencies in /External" ON)
 option(BUILD_WERROR "Enable warnings as errors (default is OFF)" OFF)
 
@@ -55,7 +54,8 @@ if(BUILD_SHARED_LIBS)
     set(LIB_TYPE SHARED)
 endif()
 
-if ("${CMAKE_BUILD_TYPE}" STREQUAL "")
+get_cmake_property(isMultiConfig "GENERATOR_IS_MULTI_CONFIG")
+if (NOT isMultiConfig AND NOT CMAKE_BUILD_TYPE)
     # This logic inside SPIRV-Tools, which can upset build target dependencies
     # if changed after targets are already defined. To prevent these issues,
     # ensure CMAKE_BUILD_TYPE is assigned early and at the glslang root scope.
@@ -93,16 +93,15 @@ option(GLSLANG_TESTS "Enable glslang testing" ${GLSLANG_TESTS_DEFAULT})
 option(GLSLANG_ENABLE_INSTALL "Enable glslang installation" ${GLSLANG_ENABLE_INSTALL_DEFAULT})
 
 option(ENABLE_SPIRV "Enables SPIRV output support" ON)
-option(ENABLE_SPVREMAPPER "Enables building of SPVRemapper" ON)
 
-option(ENABLE_GLSLANG_BINARIES "Builds glslang and spirv-remap" ON)
+option(ENABLE_GLSLANG_BINARIES "Builds glslang" ON)
 
 option(ENABLE_GLSLANG_JS "If using Emscripten, build glslang.js. Otherwise, builds a sample executable for binary-size testing.")
-CMAKE_DEPENDENT_OPTION(ENABLE_EMSCRIPTEN_SINGLE_FILE
+cmake_dependent_option(ENABLE_EMSCRIPTEN_SINGLE_FILE
     "If using Emscripten, enables SINGLE_FILE build"
     OFF "ENABLE_GLSLANG_JS AND EMSCRIPTEN"
     OFF)
-CMAKE_DEPENDENT_OPTION(ENABLE_EMSCRIPTEN_ENVIRONMENT_NODE
+cmake_dependent_option(ENABLE_EMSCRIPTEN_ENVIRONMENT_NODE
     "If using Emscripten, builds to run on Node instead of Web"
     OFF "ENABLE_GLSLANG_JS AND EMSCRIPTEN"
     OFF)
@@ -110,7 +109,7 @@ CMAKE_DEPENDENT_OPTION(ENABLE_EMSCRIPTEN_ENVIRONMENT_NODE
 option(ENABLE_HLSL "Enables HLSL input support" ON)
 option(ENABLE_RTTI "Enables RTTI")
 option(ENABLE_EXCEPTIONS "Enables Exceptions")
-CMAKE_DEPENDENT_OPTION(ENABLE_OPT "Enables spirv-opt capability if present" ON "ENABLE_SPIRV" OFF)
+cmake_dependent_option(ENABLE_OPT "Enables spirv-opt capability if present" ON "ENABLE_SPIRV" OFF)
 
 if(MINGW OR (APPLE AND ${CMAKE_CXX_COMPILER_ID} MATCHES "GNU"))
     # Workaround for CMake behavior on Mac OS with gcc, cmake generates -Xarch_* arguments
@@ -131,16 +130,16 @@ endif()
 
 if(WIN32)
     set(CMAKE_DEBUG_POSTFIX "d")
-    add_definitions(-DGLSLANG_OSINCLUDE_WIN32)
+    add_compile_definitions(GLSLANG_OSINCLUDE_WIN32)
 elseif(UNIX OR ANDROID)
-    add_definitions(-DGLSLANG_OSINCLUDE_UNIX)
+    add_compile_definitions(GLSLANG_OSINCLUDE_UNIX)
 else()
     message("unknown platform")
 endif()
 
 if(${CMAKE_CXX_COMPILER_ID} MATCHES "GNU")
     add_compile_options(-Wall -Wmaybe-uninitialized -Wuninitialized -Wunused -Wunused-local-typedefs -Wimplicit-fallthrough
-                        -Wunused-parameter -Wunused-value  -Wunused-variable -Wunused-but-set-parameter -Wunused-but-set-variable -fno-exceptions)
+                        -Wunused-parameter -Wunused-value  -Wunused-variable -Wunused-but-set-parameter -Wunused-but-set-variable)
     if(NOT ENABLE_RTTI)
         add_compile_options(-fno-rtti)
     endif()
@@ -174,6 +173,14 @@ elseif(${CMAKE_CXX_COMPILER_ID} MATCHES "Clang" AND NOT MSVC)
         endif()
     endif()
 elseif(MSVC)
+    # A unary minus operator was applied to an unsigned type, resulting in an unsigned result.
+    add_compile_options(/w14146)
+    # A negative integral constant converted to unsigned type, resulting in a possibly meaningless result.
+    add_compile_options(/w14308)
+    # Use of an uninitialized local variable.
+    add_compile_options(/w14700)
+    # Use of a potentially uninitialized local pointer variable.
+    add_compile_options(/w14703)
     if(NOT ENABLE_RTTI)
         add_compile_options(/GR-) # Disable RTTI
     endif()
@@ -183,6 +190,12 @@ elseif(MSVC)
         string(REGEX REPLACE "/EHsc" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}") # Try to remove default /EHsc cxx_flag
         add_compile_options(/D_HAS_EXCEPTIONS=0)
     endif()
+endif()
+
+if (PROJECT_IS_TOP_LEVEL)
+    # enable parallel builds for msbuild
+    list(APPEND CMAKE_VS_GLOBALS UseMultiToolTask=true)
+    list(APPEND CMAKE_VS_GLOBALS EnforceProcessCountAcrossBuilds=true)
 endif()
 
 # NOTE we could potentially replace this logic with COMPILE_WARNING_AS_ERROR if cmake minimum is bumped to >= 3.24
@@ -215,9 +228,8 @@ function(glslang_set_link_args TARGET)
     # For MinGW compiles, statically link against the GCC and C++ runtimes.
     # This avoids the need to ship those runtimes as DLLs.
     # This is supported by GCC and Clang.
-    if(WIN32 AND NOT MSVC)
-        set_target_properties(${TARGET} PROPERTIES
-                              LINK_FLAGS "-static -static-libgcc -static-libstdc++")
+    if(MINGW)
+        target_link_options(${TARGET} PRIVATE -static -static-libgcc -static-libstdc++)
     endif()
 endfunction()
 
@@ -301,12 +313,12 @@ endif()
 
 if(ENABLE_OPT)
     message(STATUS "optimizer enabled")
-    add_definitions(-DENABLE_OPT=1)
+    add_compile_definitions(ENABLE_OPT=1)
 else()
     if(ENABLE_HLSL)
         message(STATUS "spirv-tools not linked - illegal SPIRV may be generated for HLSL")
     endif()
-    add_definitions(-DENABLE_OPT=0)
+    add_compile_definitions(ENABLE_OPT=0)
 endif()
 
 if(ENABLE_SPIRV)
@@ -317,6 +329,18 @@ if(ENABLE_GLSLANG_BINARIES)
     add_subdirectory(StandAlone)
 endif()
 
+option(ALLOW_EXTERNAL_GTEST "Allows to build against installed googletest. This is unsupported if the commit isn't the one in known_good.json")
+set(GMOCK_TARGET gmock)
+if(NOT TARGET ${GMOCK_TARGET})
+    if(ALLOW_EXTERNAL_GTEST)
+        message(STATUS "Trying to find local googletest")
+        find_package(GTest)
+        if(TARGET GTest::gmock)
+            set(GMOCK_TARGET GTest::gmock)
+        endif()
+    endif()
+endif()
+
 if(GLSLANG_TESTS)
     enable_testing()
     add_subdirectory(gtests)
@@ -325,17 +349,15 @@ if(GLSLANG_TESTS)
     # Make sure to use '-o igncr' flag to ignore carriage returns (\r).
     set(IGNORE_CR_FLAG "")
     if(WIN32)
-	set(IGNORE_CR_FLAG -o igncr)
+        set(IGNORE_CR_FLAG -o igncr)
     endif()
 
-    if (CMAKE_CONFIGURATION_TYPES)
-	set(RESULTS_PATH ${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/localResults)
-	set(VALIDATOR_PATH ${CMAKE_CURRENT_BINARY_DIR}/StandAlone/$<CONFIG>/glslang)
-	set(REMAP_PATH ${CMAKE_CURRENT_BINARY_DIR}/StandAlone/$<CONFIG>/spirv-remap)
+    if (isMultiConfig)
+        set(RESULTS_PATH ${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/localResults)
+        set(VALIDATOR_PATH ${CMAKE_CURRENT_BINARY_DIR}/StandAlone/$<CONFIG>/glslang)
     else()
-	set(RESULTS_PATH ${CMAKE_CURRENT_BINARY_DIR}/localResults)
-	set(VALIDATOR_PATH ${CMAKE_CURRENT_BINARY_DIR}/StandAlone/glslang)
-	set(REMAP_PATH ${CMAKE_CURRENT_BINARY_DIR}/StandAlone/spirv-remap)
+        set(RESULTS_PATH ${CMAKE_CURRENT_BINARY_DIR}/localResults)
+        set(VALIDATOR_PATH ${CMAKE_CURRENT_BINARY_DIR}/StandAlone/glslang)
     endif()
 
     # The TARGET_RUNTIME_DLL_DIRS feature requires CMake 3.27 or greater.
@@ -343,13 +365,12 @@ if(GLSLANG_TESTS)
         message(WARNING "The Windows shared library test configuration requires CMake 3.27 or greater")
     else()
         add_test(NAME glslang-testsuite
-            COMMAND bash ${IGNORE_CR_FLAG} runtests ${RESULTS_PATH} ${VALIDATOR_PATH} ${REMAP_PATH}
+            COMMAND bash ${IGNORE_CR_FLAG} runtests ${RESULTS_PATH} ${VALIDATOR_PATH}
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/Test/)
 
         # Prepend paths to shared libraries.
         if (BUILD_SHARED_LIBS)
             set_tests_properties(glslang-testsuite PROPERTIES ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<JOIN:$<TARGET_RUNTIME_DLL_DIRS:glslang-standalone>,\;>")
-            set_tests_properties(glslang-testsuite PROPERTIES ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<JOIN:$<TARGET_RUNTIME_DLL_DIRS:spirv-remap>,\;>")
         endif()
     endif()
 endif()

@@ -73,6 +73,53 @@ OpEntryPoint GLCompute %main "main"
           "or an object decorated with WorkgroupSize must be specified."));
 }
 
+TEST_F(ValidateMode, MeshNoModeVulkan) {
+  const std::string spirv = R"(
+OpCapability Shader
+OpCapability MeshShadingEXT
+OpExtension "SPV_EXT_mesh_shader"
+OpMemoryModel Logical GLSL450
+OpEntryPoint MeshEXT %main "main"
+OpExecutionMode %main OutputVertices 81
+OpExecutionMode %main OutputPrimitivesEXT 16
+OpExecutionMode %main OutputPoints
+)" + kVoidFunction;
+
+  spv_target_env env = SPV_ENV_VULKAN_1_3;
+  CompileSuccessfully(spirv, env);
+  EXPECT_THAT(SPV_ERROR_INVALID_DATA, ValidateInstructions(env));
+  EXPECT_THAT(getDiagnosticString(),
+              AnyVUID("VUID-StandaloneSpirv-None-10685"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr(
+          "In the Vulkan environment, MeshEXT execution model entry "
+          "points require either the LocalSize or LocalSizeId execution mode "
+          "or an object decorated with WorkgroupSize must be specified."));
+}
+
+TEST_F(ValidateMode, TaskNoModeVulkan) {
+  const std::string spirv = R"(
+OpCapability Shader
+OpCapability MeshShadingEXT
+OpExtension "SPV_EXT_mesh_shader"
+OpMemoryModel Logical GLSL450
+OpEntryPoint TaskEXT %main "main"
+)" + kVoidFunction;
+
+  spv_target_env env = SPV_ENV_VULKAN_1_3;
+  CompileSuccessfully(spirv, env);
+  EXPECT_THAT(SPV_ERROR_INVALID_DATA, ValidateInstructions(env));
+  EXPECT_THAT(getDiagnosticString(),
+              AnyVUID("VUID-StandaloneSpirv-None-10685"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr(
+          "In the Vulkan environment, TaskEXT execution model entry "
+          "points require either the LocalSize or LocalSizeId execution mode "
+          "or an object decorated with WorkgroupSize must be specified."));
+}
+
 TEST_F(ValidateMode, GLComputeNoModeVulkanWorkgroupSize) {
   const std::string spirv = R"(
 OpCapability Shader
@@ -121,7 +168,7 @@ OpDecorate %int3_1 BuiltIn WorkgroupSize
 %int3 = OpTypeVector %int 3
 %int_0 = OpSpecConstant %int 0
 %int_1 = OpConstant %int 1
-%int3_1 = OpConstantComposite %int3 %int_1 %int_0 %int_0
+%int3_1 = OpSpecConstantComposite %int3 %int_1 %int_0 %int_0
 )" + kVoidFunction;
 
   CompileSuccessfully(spirv);
@@ -1784,6 +1831,24 @@ OpFunctionEnd
   EXPECT_THAT(SPV_SUCCESS, ValidateInstructions());
 }
 
+TEST_F(ValidateMode, FragmentShaderPostDepthCoverageVertexBad) {
+  const std::string spirv = R"(
+OpCapability Shader
+OpCapability SampleMaskPostDepthCoverage
+OpExtension "SPV_KHR_post_depth_coverage"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main"
+OpExecutionMode %main PostDepthCoverage
+)" + kVoidFunction;
+
+  CompileSuccessfully(spirv);
+  EXPECT_THAT(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr(
+          "Execution mode can only be used with the Fragment execution model"));
+}
+
 TEST_F(ValidateMode, FragmentShaderStencilRefFrontTooManyModesBad) {
   const std::string spirv = R"(
 OpCapability Shader
@@ -1830,6 +1895,24 @@ OpExecutionMode %main StencilRefGreaterBackAMD
                 "one of StencilRefUnchangedBackAMD, "
                 "StencilRefLessBackAMD or StencilRefGreaterBackAMD "
                 "execution modes."));
+}
+
+TEST_F(ValidateMode, FragmentShaderStencilRefReplacingVertexBad) {
+  const std::string spirv = R"(
+OpCapability Shader
+OpCapability StencilExportEXT
+OpExtension "SPV_EXT_shader_stencil_export"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %main "main"
+OpExecutionMode %main StencilRefReplacingEXT
+)" + kVoidFunction;
+
+  CompileSuccessfully(spirv);
+  EXPECT_THAT(SPV_ERROR_INVALID_DATA, ValidateInstructions());
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr(
+          "Execution mode can only be used with the Fragment execution model"));
 }
 
 TEST_F(ValidateMode, FragmentShaderStencilRefFrontGood) {
@@ -2926,7 +3009,6 @@ OpCapability TileShadingQCOM
 OpExtension "SPV_QCOM_tile_shading"
 OpMemoryModel Logical GLSL450
 OpEntryPoint GLCompute %main "main"
-OpExecutionMode %main NonCoherentTileAttachmentReadQCOM
 )" + kVoidFunction;
 
   spv_target_env env = SPV_ENV_VULKAN_1_4;

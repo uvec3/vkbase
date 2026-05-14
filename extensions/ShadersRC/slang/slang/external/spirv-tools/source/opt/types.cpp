@@ -138,6 +138,7 @@ std::unique_ptr<Type> Type::Clone() const {
     DeclareKindCase(HitObjectEXT);
     DeclareKindCase(TensorARM);
     DeclareKindCase(GraphARM);
+    DeclareKindCase(BufferEXT);
 #undef DeclareKindCase
     default:
       assert(false && "Unhandled type");
@@ -193,6 +194,7 @@ bool Type::operator==(const Type& other) const {
     DeclareKindCase(TensorViewNV);
     DeclareKindCase(TensorARM);
     DeclareKindCase(GraphARM);
+    DeclareKindCase(BufferEXT);
 #undef DeclareKindCase
     default:
       assert(false && "Unhandled type");
@@ -256,6 +258,7 @@ size_t Type::ComputeHashValue(size_t hash, SeenTypes* seen) const {
     DeclareKindCase(TensorViewNV);
     DeclareKindCase(TensorARM);
     DeclareKindCase(GraphARM);
+    DeclareKindCase(BufferEXT);
 #undef DeclareKindCase
     default:
       assert(false && "Unhandled type");
@@ -298,6 +301,78 @@ uint64_t Type::NumberOfComponents() const {
     default:
       return 0;
   }
+}
+
+std::optional<uint32_t> Type::GetByteOffset(
+    const std::vector<uint32_t>& access_chain) const {
+  uint32_t offset = 0;
+  const Type* current_type = this;
+  for (uint32_t index : access_chain) {
+    if (const Struct* struct_type = current_type->AsStruct()) {
+      std::optional<uint32_t> member_offset;
+      for (const auto& deco : struct_type->element_decorations()) {
+        if (deco.first != index) continue;
+        for (const auto& inst : deco.second) {
+          if (inst[0] == uint32_t(spv::Decoration::Offset)) {
+            member_offset = inst[1];
+            break;
+          }
+        }
+      }
+      if (!member_offset) return {};
+      offset += *member_offset;
+      current_type = struct_type->element_types()[index];
+    } else if (const Array* array_type = current_type->AsArray()) {
+      std::optional<uint32_t> array_stride;
+      for (const auto& deco : array_type->decorations()) {
+        if (deco[0] == uint32_t(spv::Decoration::ArrayStride)) {
+          array_stride = deco[1];
+          break;
+        }
+      }
+      if (!array_stride) return {};
+      offset += *array_stride * index;
+      current_type = array_type->element_type();
+    } else if (const RuntimeArray* runtime_array_type =
+                   current_type->AsRuntimeArray()) {
+      std::optional<uint32_t> array_stride;
+      for (const auto& deco : runtime_array_type->decorations()) {
+        if (deco[0] == uint32_t(spv::Decoration::ArrayStride)) {
+          array_stride = deco[1];
+          break;
+        }
+      }
+      if (!array_stride) return {};
+      offset += *array_stride * index;
+      current_type = runtime_array_type->element_type();
+    } else if (const Matrix* matrix_type = current_type->AsMatrix()) {
+      std::optional<uint32_t> matrix_stride;
+      for (const auto& deco : matrix_type->decorations()) {
+        if (deco[0] == uint32_t(spv::Decoration::MatrixStride)) {
+          matrix_stride = deco[1];
+          break;
+        }
+      }
+      if (!matrix_stride) return {};
+      offset += *matrix_stride * index;
+      current_type = matrix_type->element_type();
+    } else if (const Vector* vector_type = current_type->AsVector()) {
+      const Type* component_type = vector_type->element_type();
+      uint32_t component_size = 0;
+      if (component_type->AsInteger()) {
+        component_size = component_type->AsInteger()->width() / 8;
+      } else if (component_type->AsFloat()) {
+        component_size = component_type->AsFloat()->width() / 8;
+      } else {
+        return {};
+      }
+      offset += component_size * index;
+      current_type = component_type;
+    } else {
+      return {};
+    }
+  }
+  return offset;
 }
 
 bool Integer::IsSameImpl(const Type* that, IsSameCache*) const {
@@ -989,6 +1064,31 @@ bool GraphARM::IsSameImpl(const Type* that, IsSameCache* seen) const {
     if (!io_types_[i]->IsSameImpl(og->io_types_[i], seen)) {
       return false;
     }
+  }
+  return true;
+}
+
+BufferEXT::BufferEXT(spv::StorageClass storage_class)
+    : Type(kBufferEXT), storage_class_(storage_class) {}
+
+std::string BufferEXT::str() const {
+  std::ostringstream oss;
+  oss << "buffer<" << static_cast<uint32_t>(storage_class_) << ">";
+  return oss.str();
+}
+
+size_t BufferEXT::ComputeExtraStateHash(size_t hash, SeenTypes*) const {
+  hash = hash_combine(hash, static_cast<uint32_t>(storage_class_));
+  return hash;
+}
+
+bool BufferEXT::IsSameImpl(const Type* that, IsSameCache*) const {
+  const BufferEXT* og = that->AsBufferEXT();
+  if (!og) {
+    return false;
+  }
+  if (storage_class_ != og->storage_class_) {
+    return false;
   }
   return true;
 }

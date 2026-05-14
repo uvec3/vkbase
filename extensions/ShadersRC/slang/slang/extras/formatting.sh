@@ -60,13 +60,14 @@ run_markdown=0
 run_sh=0
 run_cmake=0
 run_all=1
+explicit_files=()
 
 show_help() {
   me=$(basename "$0")
   cat <<EOF
 $me: Format or check formatting of files in this repo
 
-Usage: $me [--check-only] [--no-version-check] [--source <path>] [--cpp] [--yaml] [--md] [--sh] [--cmake]
+Usage: $me [--check-only] [--no-version-check] [--source <path>] [--cpp] [--yaml] [--md] [--sh] [--cmake] [-- file1 file2 ...]
 
 Options:
     --check-only       Check formatting without modifying files
@@ -78,6 +79,7 @@ Options:
     --sh              Format only shell script files
     --cmake           Format only CMake files
     --since <rev>     Only format files since Git revision <rev>
+    -- file1 file2    Format only the specified files (auto-detects file types)
 EOF
 }
 
@@ -117,6 +119,11 @@ while [[ "$#" -gt 0 ]]; do
   --since)
     since_rev="$2"
     shift
+    ;;
+  --)
+    shift
+    explicit_files=("$@")
+    break
     ;;
   *)
     echo "unrecognized argument: $1"
@@ -193,8 +200,41 @@ get_nproc() {
 
 exit_code=0
 
+# If explicit files are provided, categorize them by type and set the run flags
+if [ ${#explicit_files[@]} -gt 0 ]; then
+  run_all=0
+  for file in "${explicit_files[@]}"; do
+    case "$file" in
+    *.cpp | *.hpp | *.c | *.h) run_cpp=1 ;;
+    *.yaml | *.yml | *.json) run_yaml=1 ;;
+    *.md) run_markdown=1 ;;
+    *.sh) run_sh=1 ;;
+    *.cmake | CMakeLists.txt) run_cmake=1 ;;
+    esac
+  done
+fi
+
+# Filter explicit files by extension pattern
+filter_explicit_files() {
+  local patterns=("$@")
+  local result=()
+  for file in "${explicit_files[@]}"; do
+    for pattern in "${patterns[@]}"; do
+      case "$file" in
+      $pattern)
+        result+=("$file")
+        break
+        ;;
+      esac
+    done
+  done
+  printf '%s\n' "${result[@]}"
+}
+
 function list_files() {
-  if [ "$since_rev" ] || [ "$modified_files" -eq 1 ]; then
+  if [ ${#explicit_files[@]} -gt 0 ]; then
+    filter_explicit_files "$@"
+  elif [ "$since_rev" ] || [ "$modified_files" -eq 1 ]; then
     command="git diff --name-only"
     if [ "$since_rev" ]; then
       command="$command $since_rev"
@@ -214,6 +254,7 @@ cmake_formatting() {
   echo "Formatting CMake files..." >&2
 
   readarray -t files < <(list_files '*.cmake' 'CMakeLists.txt' '**/CMakeLists.txt')
+  [ ${#files[@]} -gt 0 ] || return 0
 
   common_args=(
     # turn on warning when this is fixed https://github.com/BlankSpruce/gersemi/issues/39
@@ -251,6 +292,7 @@ cpp_formatting() {
   echo "Formatting cpp files..." >&2
 
   readarray -t files < <(list_files '*.cpp' '*.hpp' '*.c' '*.h' ':!external/**')
+  [ ${#files[@]} -gt 0 ] || return 0
 
   # The progress reporting is a bit sneaky, we use `--verbose` with xargs which
   # prints a line to stderr for each command, and we simply count these...
@@ -301,6 +343,7 @@ yaml_json_formatting() {
   echo "Formatting yaml and json files..." >&2
 
   readarray -t files < <(list_files "*.yaml" "*.yml" "*.json" ':!external/**')
+  [ ${#files[@]} -gt 0 ] || return 0
 
   prettier_formatting
 }
@@ -309,6 +352,7 @@ markdown_formatting() {
   echo "Formatting markdown files..." >&2
 
   readarray -t files < <(list_files "*.md" ':!external/**')
+  [ ${#files[@]} -gt 0 ] || return 0
 
   prettier_formatting
 }
@@ -317,6 +361,7 @@ sh_formatting() {
   echo "Formatting sh files..." >&2
 
   readarray -t files < <(list_files "*.sh")
+  [ ${#files[@]} -gt 0 ] || return 0
 
   common_args=(
     # default 8 is way too wide

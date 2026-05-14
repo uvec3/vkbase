@@ -1,17 +1,15 @@
-//DIAGNOSTIC_TEST:SIMPLE(filecheck=CHECK):
+//DIAGNOSTIC_TEST:SIMPLE(diag=CHECK,non-exhaustive):
 
 public struct Visibility
 {
   internal int x;
   public int y = 0;
-  // will synthesize a constructor
-  // __init(int y = 0)
+  // Mixed visibility: internal x != public struct.
+  // A synthesized public constructor is created for the public member only: __init(int y = 0).
 }
 
 void test()
 {
-    // CHECK: error 39999: too many arguments to call (got 2, expected 1)
-    Visibility t1 = {1, 2}; // error, no matching ctor
+    Visibility t1 = {1, 2}; // error: synthesized ctor takes 1 arg (y), not 2
+//CHECK:            ^ too many arguments to call
 }
-
-

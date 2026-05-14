@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 project(vkbase_dxc)
-set(CMAKE_CXX_STANDARD 20)
 
+find_package(Boost REQUIRED COMPONENTS regex)
 
 add_library(ShadersSlang STATIC ShaderCompilerSlang.cpp ShaderCompilerSlang.hpp)
 # keep existing Vulkan include dirs and add Slang include dirs when enabled below
@@ -15,7 +15,8 @@ SET(SLANG_RHI_ENABLE_D3D12 OFF CACHE BOOL "" FORCE)
 SET(SLANG_RHI_ENABLE_D3D11 OFF CACHE BOOL ""  FORCE)
 SET(SLANG_RHI_ENABLE_AGILITY_SDK OFF CACHE BOOL ""  FORCE)
 SET(SLANG_RHI_ENABLE_OPTIX OFF CACHE BOOL ""  FORCE)
+SET(SLANG_ENABLE_GFX OFF CACHE BOOL ""  FORCE)
 add_subdirectory(slang)
 
-target_link_libraries(ShadersSlang PUBLIC slang SPIRV-Tools-opt SPIRV-Tools-static)
+target_link_libraries(ShadersSlang PUBLIC slang SPIRV-Tools-opt SPIRV-Tools-static Boost::regex)
 

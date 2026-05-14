@@ -2,6 +2,7 @@
 #include "slang-emit-c-like.h"
 
 #include "../compiler-core/slang-name.h"
+#include "../core/slang-char-util.h"
 #include "../core/slang-stable-hash.h"
 #include "../core/slang-writer.h"
 #include "slang-emit-source-writer.h"
@@ -20,7 +21,7 @@
 #include "slang-legalize-types.h"
 #include "slang-lower-to-ir.h"
 #include "slang-mangle.h"
-#include "slang-mangled-lexer.h"
+#include "slang-rich-diagnostics.h"
 #include "slang-syntax.h"
 #include "slang-type-layout.h"
 #include "slang-visitor.h"
@@ -303,7 +304,8 @@ IRNumThreadsDecoration* CLikeSourceEmitter::getComputeThreadGroupSize(
     {
         if (id >= 0)
         {
-            getSink()->diagnose(decor, Diagnostics::unsupportedSpecializationConstantForNumThreads);
+            getSink()->diagnose(Diagnostics::UnsupportedSpecializationConstantForNumThreads{
+                .location = decor->sourceLoc});
             break;
         }
     }
@@ -1127,7 +1129,7 @@ inline String CLikeSourceEmitter::maybeMakeEntryPointNameValid(String name, Diag
         if (name == "main")
         {
             String newName = _generateUniqueName(name.getUnownedSlice());
-            sink->diagnose(SourceLoc(), Diagnostics::mainEntryPointRenamed, name, newName);
+            sink->diagnose(Diagnostics::MainEntryPointRenamed{.oldName = name, .newName = newName});
             return newName;
         }
     }
@@ -1460,6 +1462,12 @@ bool CLikeSourceEmitter::shouldFoldInstIntoUseSites(IRInst* inst)
     case kIROp_UpdateElement:
     case kIROp_DefaultConstruct:
     case kIROp_MetalCastToDepthTexture:
+    case kIROp_LoadResourceDescriptorFromHeap:
+    case kIROp_LoadSamplerDescriptorFromHeap:
+    case kIROp_CoopMatMulAdd:
+    case kIROp_CoopVecMatMulAdd:
+    case kIROp_CoopVecOuterProductAccumulate:
+    case kIROp_CoopVecReduceSumAccumulate:
         return false;
 
     // Always fold these in, because they are trivial
@@ -1869,7 +1877,7 @@ void CLikeSourceEmitter::emitDereferenceOperand(IRInst* inst, EmitOpInfo const& 
                 IRVectorType* vectorType = nullptr;
                 if (auto ptrType = as<IRPtrTypeBase>(inst->getOperand(0)->getDataType()))
                 {
-                    vectorType = as<IRVectorType>(ptrType->getValueType());
+                    vectorType = as<IRVectorType>(unwrapAttributedType(ptrType->getValueType()));
                 }
                 if (vectorType)
                 {
@@ -2336,7 +2344,9 @@ void CLikeSourceEmitter::emitInstStmt(IRInst* inst)
 
 void CLikeSourceEmitter::diagnoseUnhandledInst(IRInst* inst)
 {
-    getSink()->diagnose(inst, Diagnostics::unimplemented, "unexpected IR opcode during code emit");
+    getSink()->diagnose(Diagnostics::Unimplemented{
+        .feature = "unexpected IR opcode during code emit",
+        .location = inst->sourceLoc});
 }
 
 bool CLikeSourceEmitter::hasExplicitConstantBufferOffset(IRInst* cbufferType)
@@ -2791,11 +2801,10 @@ void CLikeSourceEmitter::defaultEmitInstExpr(IRInst* inst, const EmitOpInfo& inO
     case kIROp_ImageSubscript:
         // We should have legalized ImageSubscript before emit for metal targets
         if (isMetalTarget(this->getTargetReq()))
-            getSink()->diagnose(
-                inst,
-                Diagnostics::unimplemented,
-                "kIROp_ImageSubscript is unimplemented for Metal, expected legalization "
-                "beforehand");
+            getSink()->diagnose(Diagnostics::Unimplemented{
+                .feature = "kIROp_ImageSubscript is unimplemented for Metal, expected legalization "
+                           "beforehand",
+                .location = inst->sourceLoc});
         [[fallthrough]];
     case kIROp_GetElement:
     case kIROp_MeshOutputRef:
@@ -3212,6 +3221,7 @@ void CLikeSourceEmitter::_emitInst(IRInst* inst)
     case kIROp_DebugInlinedVariable:
     case kIROp_DebugFunction:
     case kIROp_DebugBuildIdentifier:
+    case kIROp_DebugCompilationUnit:
         break;
 
     case kIROp_Unmodified:
@@ -3235,6 +3245,11 @@ void CLikeSourceEmitter::_emitInst(IRInst* inst)
     case kIROp_StructuredBufferGetDimensions:
     case kIROp_MetalAtomicCast:
     case kIROp_MetalCastToDepthTexture:
+    case kIROp_SetOptiXPayloadRegister:
+    case kIROp_CoopMatMulAdd:
+    case kIROp_CoopVecMatMulAdd:
+    case kIROp_CoopVecOuterProductAccumulate:
+    case kIROp_CoopVecReduceSumAccumulate:
         emitInstStmt(inst);
         break;
 
@@ -3757,7 +3772,12 @@ void CLikeSourceEmitter::emitFunctionBody(IRGlobalValueWithCode* code)
     // Compute a structured region tree that can represent
     // the control flow of our function.
     //
-    RefPtr<RegionTree> regionTree = generateRegionTreeForFunc(code, getSink());
+    // Pass whether this target supports fall-through in switch statements.
+    // Targets like HLSL/WGSL don't support fall-through, so the restructure
+    // pass will use legacy behavior that doesn't preserve fall-through.
+    //
+    RefPtr<RegionTree> regionTree =
+        generateRegionTreeForFunc(code, getSink(), supportsSwitchFallThrough());
 
     // Now that we've computed the region tree, we have
     // an opportunity to perform some last-minute transformations
@@ -4138,6 +4158,13 @@ String CLikeSourceEmitter::_emitLiteralOneWithType(int bitWidth)
             one = "u32(1)";
             return one;
         }
+    }
+
+    // uint32_t is only available in HLSL 2018+ (-HV 2018), so we use uint
+    // which is valid in all HLSL versions and maps to the same DXIL type.
+    if (getTarget() == CodeGenTarget::HLSL && bitWidth == 32)
+    {
+        return "uint(1)";
     }
 
     String one;
@@ -5208,6 +5235,7 @@ void CLikeSourceEmitter::ensureGlobalInst(
     case kIROp_DebugValue:
     case kIROp_DebugInlinedVariable:
     case kIROp_DebugBuildIdentifier:
+    case kIROp_DebugCompilationUnit:
         return;
     default:
         break;

@@ -1413,6 +1413,7 @@ OpCapability CooperativeMatrixNV
 OpExtension "SPV_NV_cooperative_matrix"
 OpMemoryModel Logical GLSL450
 OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 32 1 1
 %void = OpTypeVoid
 %func = OpTypeFunction %void
 %bool = OpTypeBool
@@ -1517,9 +1518,9 @@ TEST_F(ValidateArithmetics, CoopMatMatrixTimesScalarMismatchFail) {
 
 TEST_F(ValidateArithmetics, CoopMatScopeFail) {
   const std::string types = R"(
-%device = OpConstant %u32 1
+%workgroup = OpConstant %u32 2
 
-%mat16x16_dv = OpTypeCooperativeMatrixNV %f16 %device %u32_16 %u32_16
+%mat16x16_dv = OpTypeCooperativeMatrixNV %f16 %workgroup %u32_16 %u32_16
 %f16matdv_16x16_1 = OpConstantComposite %mat16x16_dv %f16_1
 )";
 
@@ -1720,6 +1721,7 @@ OpExtension "SPV_NV_cooperative_matrix2"
 OpExtension "SPV_KHR_vulkan_memory_model"
 OpMemoryModel Logical Vulkan
 OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 32 1 1
 %void = OpTypeVoid
 %func = OpTypeFunction %void
 %bool = OpTypeBool
@@ -1824,8 +1826,8 @@ TEST_F(ValidateArithmetics, CoopMatMatrixKHRTimesScalarMismatchFail) {
 
 TEST_F(ValidateArithmetics, CoopMatKHRScopeFail) {
   const std::string types = R"(
-%device = OpConstant %u32 1
-%mat16x16_dv = OpTypeCooperativeMatrixKHR %f16 %device %u32_16 %u32_16 %useC
+%workgroup = OpConstant %u32 2
+%mat16x16_dv = OpTypeCooperativeMatrixKHR %f16 %workgroup %u32_16 %u32_16 %useC
 %f16matdv_16x16_1 = OpConstantComposite %mat16x16_dv %f16_1
 )";
 
@@ -2249,14 +2251,14 @@ TEST_F(ValidateArithmetics, CoopVecDimFail) {
 
 TEST_F(ValidateArithmetics, CoopVecComponentTypeNotScalarNumeric) {
   const std::string types = R"(
-%bad = OpTypeCooperativeVectorNV %bool %u32_8
+%bad = OpTypeCooperativeVectorNV %f16vec %u32_8
 )";
 
   CompileSuccessfully(GenerateCoopVecCode(types, "").c_str());
   EXPECT_EQ(SPV_ERROR_INVALID_ID, ValidateInstructions());
   EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("OpTypeCooperativeVectorNV Component Type <id> "
-                        "'5[%bool]' is not a scalar numerical type."));
+              HasSubstr("OpTypeVectorIdEXT Component Type <id> "
+                        "'14[%14]' is not a scalar numerical type."));
 }
 
 TEST_F(ValidateArithmetics, CoopVecDimNotConstantInt) {
@@ -2267,8 +2269,8 @@ TEST_F(ValidateArithmetics, CoopVecDimNotConstantInt) {
   CompileSuccessfully(GenerateCoopVecCode(types, "").c_str());
   EXPECT_EQ(SPV_ERROR_INVALID_ID, ValidateInstructions());
   EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("OpTypeCooperativeVectorNV component count <id> "
-                        "'19[%float_1]' is not a constant integer type"));
+              HasSubstr("OpTypeVectorIdEXT component count type <id> "
+                        "'7[%float]' is not a 32-bit integer type"));
 }
 
 }  // namespace

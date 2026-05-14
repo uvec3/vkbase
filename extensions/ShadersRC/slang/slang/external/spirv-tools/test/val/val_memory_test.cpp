@@ -604,6 +604,34 @@ TEST_F(ValidateMemory, ArrayLenResultNotIntType) {
           "0\n"));
 }
 
+TEST_F(ValidateMemory, ArrayLenResultUnsizedPointer) {
+  std::string spirv = R"(
+               OpCapability ClipDistance
+               OpMemoryModel Logical GLSL450
+               OpName %65312 "arrayLen"
+       %void = OpTypeVoid
+          %8 = OpTypeFunction %void
+      %float = OpTypeFloat 32
+    %v2float = OpTypeVector %float 2
+  %_struct_5 = OpTypeStruct %v2float
+%_ptr_Uniform__struct_5 = OpTypePointer Uniform %_struct_5
+          %6 = OpVariable %_ptr_Uniform__struct_5 Uniform
+%_ptr_Uniform_v2float = OpTypePointer Uniform %v2float
+    %2105376 = OpFunction %void None %8
+       %8224 = OpLabel
+      %65312 = OpArrayLength %_ptr_Uniform_v2float %6 538976288
+               OpUnreachable
+               OpFunctionEnd
+)";
+
+  CompileSuccessfully(spirv.c_str());
+  EXPECT_EQ(SPV_ERROR_INVALID_ID, ValidateInstructions());
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("The Result Type of OpArrayLength <id> '1[%arrayLen]' must be "
+                "OpTypeInt with width 32 or 64 and signedness 0."));
+}
+
 TEST_F(ValidateMemory, ArrayLenResultNot32bits) {
   std::string spirv = R"(
                OpCapability Shader
@@ -3654,7 +3682,8 @@ OpFunctionEnd
           "OpVariable, <id> '5[%5]', is attempting to create memory for an "
           "illegal type, OpTypeRuntimeArray.\nFor Vulkan OpTypeRuntimeArray "
           "can only appear as the final member of an OpTypeStruct, thus cannot "
-          "be instantiated via OpVariable\n  %5 = OpVariable "
+          "be instantiated via OpVariable, unless the RuntimeDescriptorArray "
+          "Capability is declared\n  %5 = OpVariable "
           "%_ptr_UniformConstant__runtimearr_2 UniformConstant\n"));
 }
 
@@ -3721,7 +3750,7 @@ OpFunctionEnd
               AnyVUID("VUID-StandaloneSpirv-OpTypeRuntimeArray-04680"));
   EXPECT_THAT(
       getDiagnosticString(),
-      HasSubstr("For Vulkan with RuntimeDescriptorArrayEXT, a variable "
+      HasSubstr("For Vulkan with RuntimeDescriptorArray, a variable "
                 "containing OpTypeRuntimeArray must have storage class of "
                 "StorageBuffer, Uniform, or UniformConstant.\n  %5 = "
                 "OpVariable %_ptr_Workgroup__runtimearr_uint Workgroup\n"));
@@ -6528,8 +6557,44 @@ OpFunctionEnd
   EXPECT_EQ(SPV_ERROR_INVALID_ID, ValidateInstructions(SPV_ENV_VULKAN_1_1));
   EXPECT_THAT(getDiagnosticString(),
               AnyVUID("VUID-StandaloneSpirv-OpUntypedVariableKHR-11167"));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr(
+          "Storage class is StorageBuffer, but Vulkan requires that Data Type "
+          "be specified when not using UniformConstant storage class"));
+}
+
+TEST_F(ValidateMemory, UntypedVariableNoDataTypeNonHeapVulkan) {
+  const std::string spirv = R"(
+OpCapability Shader
+OpCapability DescriptorHeapEXT
+OpCapability UntypedPointersKHR
+OpExtension "SPV_EXT_descriptor_heap"
+OpExtension "SPV_KHR_untyped_pointers"
+OpExtension "SPV_KHR_storage_buffer_storage_class"
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 1 1 1
+%int = OpTypeInt 32 0
+%int_0 = OpConstant %int 0
+%ptr = OpTypeUntypedPointerKHR UniformConstant
+%var = OpUntypedVariableKHR %ptr UniformConstant
+%void = OpTypeVoid
+%void_fn = OpTypeFunction %void
+%main = OpFunction %void None %void_fn
+%entry = OpLabel
+OpReturn
+OpFunctionEnd
+)";
+
+  CompileSuccessfully(spirv, SPV_ENV_VULKAN_1_1);
+  EXPECT_EQ(SPV_ERROR_INVALID_ID, ValidateInstructions(SPV_ENV_VULKAN_1_1));
   EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("Vulkan requires that data type be specified"));
+              AnyVUID("VUID-StandaloneSpirv-OpUntypedVariableKHR-11347"));
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("Storage class is UniformConstant, but Vulkan requires "
+                        "that Data Type be specified if the variable is not "
+                        "decorated with SamplerHeapEXT or ResourceHeapEXT"));
 }
 
 TEST_F(ValidateMemory, PtrAccessChainArrayStrideBad) {
@@ -7690,6 +7755,41 @@ OpFunctionEnd
   EXPECT_THAT(getDiagnosticString(), HasSubstr("Size must be a multiple of 2"));
 }
 
+TEST_F(ValidateMemory, CopyMemorySizedVulkanConstant) {
+  const std::string spirv = R"(
+        OpCapability Shader
+        OpCapability UntypedPointersKHR
+        OpExtension "SPV_KHR_untyped_pointers"
+        OpMemoryModel Logical GLSL450
+        OpEntryPoint GLCompute %main "main" %v1 %v2
+        OpExecutionMode %main LocalSize 1 1 1
+        OpDecorate %struct Block
+        OpDecorate %v1 DescriptorSet 0
+        OpDecorate %v1 Binding 0
+        OpDecorate %v2 DescriptorSet 0
+        OpDecorate %v2 Binding 0
+        OpMemberDecorate %struct 0 Offset 0
+        %void = OpTypeVoid
+        %int = OpTypeInt 32 0
+        %int_2 = OpConstant %int 2
+        %struct = OpTypeStruct %int
+        %ptr = OpTypeUntypedPointerKHR StorageBuffer
+        %v1 = OpUntypedVariableKHR %ptr StorageBuffer %struct
+        %v2 = OpUntypedVariableKHR %ptr StorageBuffer %struct
+        %void_fn = OpTypeFunction %void
+        %main = OpFunction %void None %void_fn
+        %entry = OpLabel
+        OpCopyMemorySized %v2 %v1 %int_2
+        OpReturn
+        OpFunctionEnd
+)";
+
+  CompileSuccessfully(spirv, SPV_ENV_VULKAN_1_3);
+  EXPECT_EQ(SPV_ERROR_INVALID_ID, ValidateInstructions(SPV_ENV_VULKAN_1_3));
+  EXPECT_THAT(getDiagnosticString(), HasSubstr("Size must be a multiple of 4"));
+  EXPECT_THAT(getDiagnosticString(), AnyVUID("VUID-RuntimeSpirv-Size-11165"));
+}
+
 TEST_F(ValidateMemory, PtrEqualUntypedPointersGood) {
   const std::string spirv = R"(
 OpCapability Shader
@@ -8009,7 +8109,46 @@ OpFunctionEnd
   CompileSuccessfully(spirv, SPV_ENV_UNIVERSAL_1_3);
   EXPECT_EQ(SPV_ERROR_INVALID_ID, ValidateInstructions(SPV_ENV_UNIVERSAL_1_3));
   EXPECT_THAT(getDiagnosticString(),
-              HasSubstr("Pointer must be an untyped pointer"));
+              HasSubstr("Pointer must be an untyped pointer object"));
+}
+
+TEST_F(ValidateMemory, UntypedArrayLengthBadPointer2) {
+  const std::string spirv = R"(
+               OpCapability Shader
+               OpCapability UntypedPointersKHR
+               OpCapability Int64
+               OpExtension "SPV_KHR_untyped_pointers"
+               OpMemoryModel Logical GLSL450
+               OpEntryPoint GLCompute %main "main" %b
+               OpExecutionMode %main LocalSize 1 1 1
+               OpDecorate %_runtimearr_float ArrayStride 4
+               OpDecorate %B Block
+               OpMemberDecorate %B 0 NonWritable
+               OpMemberDecorate %B 0 Offset 0
+               OpDecorate %b NonWritable
+               OpDecorate %b Binding 0
+               OpDecorate %b DescriptorSet 0
+       %void = OpTypeVoid
+          %4 = OpTypeFunction %void
+      %float = OpTypeFloat 32
+%_runtimearr_float = OpTypeRuntimeArray %float
+          %B = OpTypeStruct %_runtimearr_float
+        %ptr = OpTypeUntypedPointerKHR StorageBuffer
+          %b = OpUntypedVariableKHR %ptr StorageBuffer %B
+      %ulong = OpTypeInt 64 0
+       %long = OpTypeInt 64 1
+       %main = OpFunction %void None %4
+          %6 = OpLabel
+         %13 = OpUntypedArrayLengthKHR %ulong %b %ptr 0
+         %15 = OpBitcast %long %13
+               OpReturn
+               OpFunctionEnd
+)";
+
+  CompileSuccessfully(spirv, SPV_ENV_UNIVERSAL_1_3);
+  EXPECT_EQ(SPV_ERROR_INVALID_ID, ValidateInstructions(SPV_ENV_UNIVERSAL_1_3));
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("Pointer must be an untyped pointer object"));
 }
 
 TEST_F(ValidateMemory, UntypedArrayLengtBadStruct) {
@@ -8790,6 +8929,84 @@ OpFunctionEnd
       HasSubstr(
           "In Logical addressing with variable pointers, variables that "
           "allocate pointers must be in Function or Private storage classes"));
+}
+
+TEST_F(ValidateMemory, VariablePointerInStruct) {
+  const std::string spirv = R"(
+OpCapability Shader
+OpCapability VariablePointers
+OpExtension "SPV_KHR_variable_pointers"
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 1 1 1
+%void = OpTypeVoid
+%void_fn = OpTypeFunction %void
+%int = OpTypeInt 32 0
+%ptr_s = OpTypePointer Workgroup %int
+%struct_t = OpTypeStruct %ptr_s
+%ptr_struct = OpTypePointer Function %struct_t
+%main = OpFunction %void None %void_fn
+%entry = OpLabel
+%var = OpVariable %ptr_struct Function
+OpReturn
+OpFunctionEnd
+)";
+
+  CompileSuccessfully(spirv, SPV_ENV_UNIVERSAL_1_3);
+  EXPECT_EQ(SPV_SUCCESS, ValidateInstructions(SPV_ENV_UNIVERSAL_1_3));
+}
+
+TEST_F(ValidateMemory, VariablePointerInArray) {
+  const std::string spirv = R"(
+OpCapability Shader
+OpCapability VariablePointers
+OpExtension "SPV_KHR_variable_pointers"
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 1 1 1
+%void = OpTypeVoid
+%void_fn = OpTypeFunction %void
+%int = OpTypeInt 32 0
+%int_4 = OpConstant %int 4
+%ptr_s = OpTypePointer Workgroup %int
+%array_t = OpTypeArray %ptr_s %int_4
+%ptr_array = OpTypePointer Function %array_t
+%main = OpFunction %void None %void_fn
+%entry = OpLabel
+%var = OpVariable %ptr_array Function
+OpReturn
+OpFunctionEnd
+)";
+
+  CompileSuccessfully(spirv, SPV_ENV_UNIVERSAL_1_3);
+  EXPECT_EQ(SPV_SUCCESS, ValidateInstructions(SPV_ENV_UNIVERSAL_1_3));
+}
+
+TEST_F(ValidateMemory, NoVariablePointerInStruct) {
+  const std::string spirv = R"(
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 1 1 1
+%void = OpTypeVoid
+%void_fn = OpTypeFunction %void
+%int = OpTypeInt 32 0
+%ptr_f = OpTypePointer Function %int
+%struct_t = OpTypeStruct %ptr_f
+%ptr_struct = OpTypePointer Function %struct_t
+%main = OpFunction %void None %void_fn
+%entry = OpLabel
+%var = OpVariable %ptr_struct Function
+OpReturn
+OpFunctionEnd
+)";
+
+  CompileSuccessfully(spirv, SPV_ENV_UNIVERSAL_1_3);
+  EXPECT_EQ(SPV_ERROR_INVALID_ID, ValidateInstructions(SPV_ENV_UNIVERSAL_1_3));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("In Logical addressing, variables can only allocate a pointer "
+                "to the StorageBuffer or Workgroup storage classes"));
 }
 
 TEST_F(ValidateMemory, VariablePointerBadStorageClassUntyped) {
@@ -9618,6 +9835,7 @@ OpExtension "SPV_EXT_replicated_composites"
 OpExtension "SPV_KHR_vulkan_memory_model"
 OpMemoryModel Logical GLSL450
 OpEntryPoint GLCompute %main "main"
+OpExecutionMode %main LocalSize 1 1 1
 %void = OpTypeVoid
 %func = OpTypeFunction %void
 %f16 = OpTypeFloat 16
@@ -9639,8 +9857,9 @@ OpEntryPoint GLCompute %main "main"
 OpReturn
 OpFunctionEnd)";
 
-  CompileSuccessfully(body.c_str(), SPV_ENV_UNIVERSAL_1_3);
-  ASSERT_EQ(SPV_ERROR_INVALID_ID, ValidateInstructions(SPV_ENV_UNIVERSAL_1_3));
+  CompileSuccessfully(body.c_str(), SPV_ENV_VULKAN_1_1_SPIRV_1_4);
+  ASSERT_EQ(SPV_ERROR_INVALID_ID,
+            ValidateInstructions(SPV_ENV_VULKAN_1_1_SPIRV_1_4));
   EXPECT_THAT(
       getDiagnosticString(),
       HasSubstr(
@@ -10168,6 +10387,80 @@ TEST_F(ValidateMemory, PhysicalStorageBufferArray) {
 
   CompileSuccessfully(body.c_str(), SPV_ENV_VULKAN_1_0);
   ASSERT_EQ(SPV_SUCCESS, ValidateInstructions(SPV_ENV_VULKAN_1_0));
+}
+
+TEST_F(ValidateMemory, LongVectorPrivateStorageClassGood) {
+  std::string spirv = R"(
+OpCapability Shader
+OpCapability LongVectorEXT
+OpExtension "SPV_EXT_long_vector"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %func "func"
+%float = OpTypeFloat 32
+%vec5 = OpTypeVector %float 5
+%vec5ptr = OpTypePointer Private %vec5
+%1 = OpVariable %vec5ptr Private
+%void = OpTypeVoid
+%functy = OpTypeFunction %void
+%func = OpFunction %void None %functy
+%2 = OpLabel
+OpReturn
+OpFunctionEnd
+)";
+  CompileSuccessfully(spirv.c_str(), SPV_ENV_VULKAN_1_1);
+  EXPECT_EQ(SPV_SUCCESS, ValidateInstructions(SPV_ENV_VULKAN_1_1));
+}
+
+TEST_F(ValidateMemory, LongVectorInputStorageClassBad) {
+  std::string spirv = R"(
+OpCapability Shader
+OpCapability LongVectorEXT
+OpExtension "SPV_EXT_long_vector"
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %func "func"
+%float = OpTypeFloat 32
+%vec5 = OpTypeVector %float 5
+%vec5ptr = OpTypePointer Input %vec5
+%1 = OpVariable %vec5ptr Input
+%void = OpTypeVoid
+%functy = OpTypeFunction %void
+%func = OpFunction %void None %functy
+%2 = OpLabel
+OpReturn
+OpFunctionEnd
+)";
+  CompileSuccessfully(spirv.c_str(), SPV_ENV_VULKAN_1_1);
+  EXPECT_EQ(SPV_ERROR_INVALID_ID, ValidateInstructions(SPV_ENV_VULKAN_1_1));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("Long vector types with more than 4 components (or types "
+                "containing them) not supported in storage class Input"));
+  EXPECT_THAT(getDiagnosticString(),
+              AnyVUID("VUID-StandaloneSpirv-Type-12297"));
+}
+
+TEST_F(ValidateMemory, LongVectorMissingCapabilityBad) {
+  std::string spirv = R"(
+OpCapability Shader
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %func "func"
+%float = OpTypeFloat 32
+%vec5 = OpTypeVector %float 5
+%vec5ptr = OpTypePointer Private %vec5
+%1 = OpVariable %vec5ptr Private
+%void = OpTypeVoid
+%functy = OpTypeFunction %void
+%func = OpFunction %void None %functy
+%2 = OpLabel
+OpReturn
+OpFunctionEnd
+)";
+  CompileSuccessfully(spirv.c_str(), SPV_ENV_VULKAN_1_1);
+  EXPECT_EQ(SPV_ERROR_INVALID_DATA, ValidateInstructions(SPV_ENV_VULKAN_1_1));
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("Illegal number of components (5) for TypeVector"));
+  EXPECT_THAT(getDiagnosticString(),
+              AnyVUID("VUID-StandaloneSpirv-None-12295"));
 }
 
 }  // namespace

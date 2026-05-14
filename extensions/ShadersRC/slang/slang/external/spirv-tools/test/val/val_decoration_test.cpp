@@ -1520,9 +1520,9 @@ TEST_F(ValidateDecorations, BlockMissingArrayStrideBad) {
 
   CompileSuccessfully(spirv);
   EXPECT_EQ(SPV_ERROR_INVALID_ID, ValidateAndRetrieveValidationState());
-  EXPECT_THAT(
-      getDiagnosticString(),
-      HasSubstr("must be explicitly laid out with ArrayStride decorations"));
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("must be explicitly laid out with ArrayStride or "
+                        "ArrayStrideIdEXT decorations"));
 }
 
 TEST_F(ValidateDecorations, BufferBlockMissingArrayStrideBad) {
@@ -1552,9 +1552,9 @@ TEST_F(ValidateDecorations, BufferBlockMissingArrayStrideBad) {
 
   CompileSuccessfully(spirv);
   EXPECT_EQ(SPV_ERROR_INVALID_ID, ValidateAndRetrieveValidationState());
-  EXPECT_THAT(
-      getDiagnosticString(),
-      HasSubstr("must be explicitly laid out with ArrayStride decorations"));
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("must be explicitly laid out with ArrayStride or "
+                        "ArrayStrideIdEXT decorations"));
 }
 
 TEST_F(ValidateDecorations, BlockNestedStructMissingArrayStrideBad) {
@@ -1589,9 +1589,9 @@ TEST_F(ValidateDecorations, BlockNestedStructMissingArrayStrideBad) {
 
   CompileSuccessfully(spirv);
   EXPECT_EQ(SPV_ERROR_INVALID_ID, ValidateAndRetrieveValidationState());
-  EXPECT_THAT(
-      getDiagnosticString(),
-      HasSubstr("must be explicitly laid out with ArrayStride decorations"));
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("must be explicitly laid out with ArrayStride or "
+                        "ArrayStrideIdEXT decorations"));
 }
 
 TEST_F(ValidateDecorations, BufferBlockNestedStructMissingArrayStrideBad) {
@@ -1626,9 +1626,9 @@ TEST_F(ValidateDecorations, BufferBlockNestedStructMissingArrayStrideBad) {
 
   CompileSuccessfully(spirv);
   EXPECT_EQ(SPV_ERROR_INVALID_ID, ValidateAndRetrieveValidationState());
-  EXPECT_THAT(
-      getDiagnosticString(),
-      HasSubstr("must be explicitly laid out with ArrayStride decorations"));
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("must be explicitly laid out with ArrayStride or "
+                        "ArrayStrideIdEXT decorations"));
 }
 
 TEST_F(ValidateDecorations, BlockMissingMatrixStrideBad) {
@@ -5304,6 +5304,71 @@ TEST_F(ValidateDecorations, VulkanFPRoundingModeBadMode) {
       HasSubstr("In Vulkan, the FPRoundingMode mode must only by RTE or RTZ."));
 }
 
+TEST_F(ValidateDecorations, KernelFPRoundingModeGood) {
+  std::string spirv = R"(
+               OpCapability Addresses
+               OpCapability Kernel
+               OpCapability Float64
+               OpMemoryModel Physical64 OpenCL
+               OpEntryPoint Kernel %kernel "test"
+               OpDecorate %out_float0 FPRoundingMode RTE
+               OpDecorate %out_float1 FPRoundingMode RTZ
+               OpDecorate %out_sint FPRoundingMode RTP
+               OpDecorate %out_uint FPRoundingMode RTN
+               OpDecorate %out_double FPRoundingMode RTE
+               OpDecorate %out_float2 FPRoundingMode RTZ
+       %uint = OpTypeInt 32 0
+       %void = OpTypeVoid
+      %float = OpTypeFloat 32
+     %double = OpTypeFloat 64
+   %functype = OpTypeFunction %void %uint %float %double
+     %kernel = OpFunction %void None %functype
+     %in_int = OpFunctionParameter %uint
+   %in_float = OpFunctionParameter %float
+  %in_double = OpFunctionParameter %double
+      %entry = OpLabel
+ %out_float0 = OpConvertSToF %float %in_int
+ %out_float1 = OpConvertUToF %float %in_int
+   %out_sint = OpConvertFToS %uint %in_float
+   %out_uint = OpConvertFToU %uint %in_float
+ %out_double = OpFConvert %double %in_float
+ %out_float2 = OpFConvert %float %in_double
+               OpReturn
+               OpFunctionEnd
+  )";
+
+  CompileSuccessfully(spirv, SPV_ENV_UNIVERSAL_1_0);
+  EXPECT_EQ(SPV_SUCCESS,
+            ValidateAndRetrieveValidationState(SPV_ENV_UNIVERSAL_1_0));
+}
+
+TEST_F(ValidateDecorations, KernelFPRoundingModeBadMode) {
+  std::string spirv = R"(
+               OpCapability Addresses
+               OpCapability Kernel
+               OpMemoryModel Physical64 OpenCL
+               OpEntryPoint Kernel %kernel "test"
+               OpDecorate %out_float FPRoundingMode RTE
+       %void = OpTypeVoid
+      %float = OpTypeFloat 32
+   %functype = OpTypeFunction %void %float
+     %kernel = OpFunction %void None %functype
+   %in_float = OpFunctionParameter %float
+      %entry = OpLabel
+  %out_float = OpFAdd %float %in_float %in_float
+               OpReturn
+               OpFunctionEnd
+  )";
+
+  CompileSuccessfully(spirv, SPV_ENV_UNIVERSAL_1_0);
+  EXPECT_EQ(SPV_ERROR_INVALID_ID,
+            ValidateAndRetrieveValidationState(SPV_ENV_UNIVERSAL_1_0));
+  EXPECT_THAT(
+      getDiagnosticString(),
+      HasSubstr("FPRoundingMode decoration can be applied only to a conversion "
+                "instruction to or from a floating-point type."));
+}
+
 TEST_F(ValidateDecorations, GroupDecorateTargetsDecorationGroup) {
   std::string spirv = R"(
 OpCapability Shader
@@ -7443,9 +7508,9 @@ TEST_F(ValidateDecorations, ComponentDecoration64Vec2BadVulkan) {
   EXPECT_EQ(SPV_ERROR_INVALID_ID, ValidateAndRetrieveValidationState(env));
   EXPECT_THAT(getDiagnosticString(),
               AnyVUID("VUID-StandaloneSpirv-Component-04922"));
-  HasSubstr(
-      "Sequence of components starting with 2 "
-      "and ending with 6 gets larger than 3");
+  EXPECT_THAT(getDiagnosticString(),
+              HasSubstr("Sequence of components starting with 2 "
+                        "and ending with 5 gets larger than 3"));
 }
 
 TEST_F(ValidateDecorations, ComponentDecoration64VecWideBadVulkan) {
@@ -11259,6 +11324,139 @@ OpFunctionEnd
                         "larger offsets"));
   EXPECT_THAT(getDiagnosticString(),
               AnyVUID("VUID-StandaloneSpirv-OpTypeRuntimeArray-04680"));
+}
+
+TEST_F(ValidateDecorations, LongVectorUniformPass) {
+  const std::string spirv = R"(
+OpCapability Shader
+OpCapability Int8
+OpCapability UniformAndStorageBuffer8BitAccess
+OpCapability LongVectorEXT
+
+OpExtension "SPV_KHR_8bit_storage"
+OpExtension "SPV_EXT_long_vector"
+
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %BP_main "main"
+
+OpDecorate %input0 DescriptorSet 0
+OpDecorate %input0 Binding 0
+OpDecorate %a10testtype ArrayStride 12
+OpDecorate %buf BufferBlock
+OpMemberDecorate %buf 0 Offset 0
+
+%void = OpTypeVoid
+%bool = OpTypeBool
+%u32 = OpTypeInt 32 0
+%voidf = OpTypeFunction %void
+%c_u32_10 = OpConstant %u32 10
+%vectorSizeConst = OpConstant %u32 12
+
+%scalartype = OpTypeInt 8 1
+%testtype = OpTypeVectorIdEXT %scalartype %vectorSizeConst
+
+%a10testtype = OpTypeArray %testtype %c_u32_10
+%buf = OpTypeStruct %a10testtype
+%bufptr = OpTypePointer Uniform %buf
+
+%input0 = OpVariable %bufptr Uniform
+
+
+%BP_main = OpFunction %void None %voidf
+%BP_label = OpLabel
+OpReturn
+OpFunctionEnd
+
+)";
+
+  CompileSuccessfully(spirv, SPV_ENV_VULKAN_1_0);
+  EXPECT_EQ(SPV_SUCCESS, ValidateInstructions(SPV_ENV_VULKAN_1_0));
+}
+
+TEST_F(ValidateDecorations, LongVectorUniformSpecConstantFail) {
+  const std::string spirv = R"(
+OpCapability Shader
+OpCapability LongVectorEXT
+
+OpExtension "SPV_EXT_long_vector"
+
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %BP_main "main"
+
+OpDecorate %input0 DescriptorSet 0
+OpDecorate %input0 Binding 0
+OpDecorate %buf BufferBlock
+OpMemberDecorate %buf 0 Offset 0
+OpDecorate %spec_const SpecId 1
+
+%void = OpTypeVoid
+%bool = OpTypeBool
+%u32 = OpTypeInt 32 0
+%voidf = OpTypeFunction %void
+%spec_const = OpSpecConstant %u32 12
+
+%scalartype = OpTypeInt 32 1
+%testtype = OpTypeVectorIdEXT %scalartype %spec_const
+
+%buf = OpTypeStruct %testtype
+%bufptr = OpTypePointer Uniform %buf
+
+%input0 = OpVariable %bufptr Uniform
+
+
+%BP_main = OpFunction %void None %voidf
+%BP_label = OpLabel
+OpReturn
+OpFunctionEnd
+
+)";
+
+  CompileSuccessfully(spirv, SPV_ENV_VULKAN_1_0);
+  ASSERT_EQ(SPV_ERROR_INVALID_ID, ValidateInstructions(SPV_ENV_VULKAN_1_0));
+  EXPECT_THAT(getDiagnosticString(),
+              AnyVUID("VUID-StandaloneSpirv-Function-12294"));
+}
+
+TEST_F(ValidateDecorations, LongVectorWorkgroupSpecConstantFail) {
+  const std::string spirv = R"(
+OpCapability Shader
+OpCapability LongVectorEXT
+OpCapability WorkgroupMemoryExplicitLayoutKHR
+OpExtension "SPV_KHR_workgroup_memory_explicit_layout"
+
+OpExtension "SPV_EXT_long_vector"
+
+OpMemoryModel Logical GLSL450
+OpEntryPoint Vertex %BP_main "main"
+
+OpDecorate %spec_const SpecId 1
+OpMemberDecorate %str 0 Offset 0
+OpDecorate %str Block
+
+%void = OpTypeVoid
+%bool = OpTypeBool
+%u32 = OpTypeInt 32 0
+%voidf = OpTypeFunction %void
+%spec_const = OpSpecConstant %u32 12
+
+%scalartype = OpTypeInt 32 1
+%testtype = OpTypeVectorIdEXT %scalartype %spec_const
+
+%str = OpTypeStruct %testtype
+%ptr_str_Workgroup = OpTypePointer Workgroup %str
+%var = OpVariable %ptr_str_Workgroup Workgroup
+
+%BP_main = OpFunction %void None %voidf
+%BP_label = OpLabel
+OpReturn
+OpFunctionEnd
+
+)";
+
+  CompileSuccessfully(spirv, SPV_ENV_VULKAN_1_3);
+  ASSERT_EQ(SPV_ERROR_INVALID_ID, ValidateInstructions(SPV_ENV_VULKAN_1_3));
+  EXPECT_THAT(getDiagnosticString(),
+              AnyVUID("VUID-StandaloneSpirv-Function-12294"));
 }
 
 }  // namespace

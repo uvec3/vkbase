@@ -144,6 +144,14 @@ static inline ProgramLayout* convert(SlangReflection* program)
     return (SlangReflection*)program;
 }
 
+static bool isScalarType(Type* type)
+{
+    if (as<BasicExpressionType>(type))
+        return true;
+
+    return as<BFloat16Type>(type) || as<FloatE4M3Type>(type) || as<FloatE5M2Type>(type);
+}
+
 // user attribute
 
 static unsigned int getUserAttributeCount(Decl* decl)
@@ -402,27 +410,27 @@ SLANG_API SlangTypeKind spReflectionType_GetKind(SlangReflectionType* inType)
 
     // TODO(tfoley): Don't emit the same type more than once...
 
-    if (const auto basicType = as<BasicExpressionType>(type))
+    if (isScalarType(type))
     {
         return SLANG_TYPE_KIND_SCALAR;
     }
-    else if (const auto vectorType = as<VectorExpressionType>(type))
+    else if (const auto vectorType = as<VectorExpressionType>(type); vectorType)
     {
         return SLANG_TYPE_KIND_VECTOR;
     }
-    else if (const auto matrixType = as<MatrixExpressionType>(type))
+    else if (const auto matrixType = as<MatrixExpressionType>(type); matrixType)
     {
         return SLANG_TYPE_KIND_MATRIX;
     }
-    else if (const auto parameterBlockType = as<ParameterBlockType>(type))
+    else if (const auto parameterBlockType = as<ParameterBlockType>(type); parameterBlockType)
     {
         return SLANG_TYPE_KIND_PARAMETER_BLOCK;
     }
-    else if (const auto constantBufferType = as<ConstantBufferType>(type))
+    else if (const auto constantBufferType = as<ConstantBufferType>(type); constantBufferType)
     {
         return SLANG_TYPE_KIND_CONSTANT_BUFFER;
     }
-    else if (const auto streamOutputType = as<HLSLStreamOutputType>(type))
+    else if (const auto streamOutputType = as<HLSLStreamOutputType>(type); streamOutputType)
     {
         return SLANG_TYPE_KIND_OUTPUT_STREAM;
     }
@@ -438,23 +446,27 @@ SLANG_API SlangTypeKind spReflectionType_GetKind(SlangReflectionType* inType)
     {
         return SLANG_TYPE_KIND_SHADER_STORAGE_BUFFER;
     }
-    else if (const auto samplerStateType = as<SamplerStateType>(type))
+    else if (const auto samplerStateType = as<SamplerStateType>(type); samplerStateType)
     {
         return SLANG_TYPE_KIND_SAMPLER_STATE;
     }
-    else if (const auto textureType = as<TextureTypeBase>(type))
+    else if (const auto textureType = as<TextureTypeBase>(type); textureType)
     {
         return SLANG_TYPE_KIND_RESOURCE;
     }
-    else if (const auto feedbackType = as<FeedbackType>(type))
+    else if (const auto subpassInputType = as<SubpassInputType>(type); subpassInputType)
+    {
+        return SLANG_TYPE_KIND_RESOURCE;
+    }
+    else if (const auto feedbackType = as<FeedbackType>(type); feedbackType)
     {
         return SLANG_TYPE_KIND_FEEDBACK;
     }
-    else if (const auto ptrType = as<PtrType>(type))
+    else if (const auto ptrType = as<PtrType>(type); ptrType)
     {
         return SLANG_TYPE_KIND_POINTER;
     }
-    else if (const auto dynamicResourceType = as<DynamicResourceType>(type))
+    else if (const auto dynamicResourceType = as<DynamicResourceType>(type); dynamicResourceType)
     {
         return SLANG_TYPE_KIND_DYNAMIC_RESOURCE;
     }
@@ -478,7 +490,7 @@ SLANG_API SlangTypeKind spReflectionType_GetKind(SlangReflectionType* inType)
     CASE(GLSLShaderStorageBufferType);
 #undef CASE
 
-    else if (const auto arrayType = as<ArrayExpressionType>(type))
+    else if (const auto arrayType = as<ArrayExpressionType>(type); arrayType)
     {
         return SLANG_TYPE_KIND_ARRAY;
     }
@@ -502,12 +514,16 @@ SLANG_API SlangTypeKind spReflectionType_GetKind(SlangReflectionType* inType)
             // This is a reference to an entry point
             return SLANG_TYPE_KIND_STRUCT;
         }
+        else if (declRef.is<EnumDecl>())
+        {
+            return SLANG_TYPE_KIND_ENUM;
+        }
     }
-    else if (const auto specializedType = as<ExistentialSpecializedType>(type))
+    else if (const auto specializedType = as<ExistentialSpecializedType>(type); specializedType)
     {
         return SLANG_TYPE_KIND_SPECIALIZED;
     }
-    else if (const auto errorType = as<ErrorType>(type))
+    else if (const auto errorType = as<ErrorType>(type); errorType)
     {
         // This means we saw a type we didn't understand in the user's code
         return SLANG_TYPE_KIND_NONE;
@@ -536,6 +552,10 @@ SLANG_API unsigned int spReflectionType_GetFieldCount(SlangReflectionType* inTyp
                        MemberFilterStyle::Instance)
                 .getCount();
         }
+        else if (auto enumDeclRef = declRef.as<EnumDecl>())
+        {
+            return (unsigned int)enumDeclRef.getDecl()->getMembersOfType<EnumCaseDecl>().getCount();
+        }
     }
 
     return 0;
@@ -562,6 +582,12 @@ SLANG_API SlangReflectionVariable* spReflectionType_GetFieldByIndex(
                 MemberFilterStyle::Instance);
             auto fieldDeclRef = fields[index];
             return convert(fieldDeclRef);
+        }
+        else if (auto enumDeclRef = declRef.as<EnumDecl>())
+        {
+            auto cases = enumDeclRef.getDecl()->getMembersOfType<EnumCaseDecl>();
+            auto caseDecl = cases[index];
+            return convert(DeclRef(caseDecl));
         }
     }
 
@@ -638,6 +664,18 @@ SLANG_API SlangReflectionType* spReflectionType_GetElementType(SlangReflectionTy
     {
         return convert(matrixType->getElementType());
     }
+    else if (auto declRefType = as<DeclRefType>(type))
+    {
+        const auto& declRef = declRefType->getDeclRef();
+        if (auto enumDecl = declRef.as<EnumDecl>())
+        {
+            return convert(enumDecl.getDecl()->tagType);
+        }
+    }
+    else if (auto streamType = as<HLSLStreamOutputType>(type))
+    {
+        return convert(streamType->getElementType());
+    }
 
     return nullptr;
 }
@@ -652,11 +690,11 @@ SLANG_API unsigned int spReflectionType_GetRowCount(SlangReflectionType* inType)
     {
         return (unsigned int)getIntVal(matrixType->getRowCount());
     }
-    else if (const auto vectorType = as<VectorExpressionType>(type))
+    else if (const auto vectorType = as<VectorExpressionType>(type); vectorType)
     {
         return 1;
     }
-    else if (const auto basicType = as<BasicExpressionType>(type))
+    else if (isScalarType(type))
     {
         return 1;
     }
@@ -678,7 +716,7 @@ SLANG_API unsigned int spReflectionType_GetColumnCount(SlangReflectionType* inTy
     {
         return (unsigned int)getIntVal(vectorType->getElementCount());
     }
-    else if (const auto basicType = as<BasicExpressionType>(type))
+    else if (isScalarType(type))
     {
         return 1;
     }
@@ -722,15 +760,23 @@ SLANG_API SlangScalarType spReflectionType_GetScalarType(SlangReflectionType* in
             CASE(Half, FLOAT16);
             CASE(Float, FLOAT32);
             CASE(Double, FLOAT64);
+            CASE(IntPtr, INTPTR);
+            CASE(UIntPtr, UINTPTR);
 
 #undef CASE
 
         default:
             SLANG_REFLECTION_UNEXPECTED();
             return SLANG_SCALAR_TYPE_NONE;
-            break;
         }
     }
+
+    if (as<BFloat16Type>(type))
+        return SLANG_SCALAR_TYPE_BFLOAT16;
+    if (as<FloatE4M3Type>(type))
+        return SLANG_SCALAR_TYPE_FLOAT_E4M3;
+    if (as<FloatE5M2Type>(type))
+        return SLANG_SCALAR_TYPE_FLOAT_E5M2;
 
     return SLANG_SCALAR_TYPE_NONE;
 }
@@ -806,6 +852,12 @@ SLANG_API SlangResourceShape spReflectionType_GetResourceShape(SlangReflectionTy
         return textureType->getShape();
     }
 
+    if (auto subpassInputType = as<SubpassInputType>(type))
+    {
+        return subpassInputType->isMultisample() ? SLANG_TEXTURE_SUBPASS_MULTISAMPLE
+                                                 : SLANG_TEXTURE_SUBPASS;
+    }
+
     // TODO: need a better way to handle this stuff...
 #define CASE(TYPE, SHAPE, ACCESS) \
     else if (as<TYPE>(type)) do   \
@@ -853,6 +905,11 @@ SLANG_API SlangResourceAccess spReflectionType_GetResourceAccess(SlangReflection
     if (auto textureType = as<TextureTypeBase>(type))
     {
         return textureType->getAccess();
+    }
+
+    if (as<SubpassInputType>(type))
+    {
+        return SLANG_RESOURCE_ACCESS_READ;
     }
 
     // TODO: need a better way to handle this stuff...
@@ -1199,6 +1256,11 @@ SLANG_API SlangReflectionType* spReflectionType_GetResourceResultType(SlangRefle
         return convert(textureType->getElementType());
     }
 
+    if (auto subpassInputType = as<SubpassInputType>(type))
+    {
+        return convert(subpassInputType->getElementType());
+    }
+
     // TODO: need a better way to handle this stuff...
 #define CASE(TYPE, SHAPE, ACCESS)                         \
     else if (as<TYPE>(type)) do                           \
@@ -1526,6 +1588,10 @@ SLANG_API SlangReflectionTypeLayout* spReflectionTypeLayout_GetElementTypeLayout
     {
         return convert(ptrTypeLayout->valueTypeLayout.Ptr());
     }
+    else if (auto streamOutputTypeLayout = as<StreamOutputTypeLayout>(typeLayout))
+    {
+        return convert(streamOutputTypeLayout->elementTypeLayout.Ptr());
+    }
     return nullptr;
 }
 
@@ -1781,7 +1847,8 @@ SlangBindingType _calcResourceBindingType(Type* type)
             return SlangBindingType(SLANG_BINDING_TYPE_TYPED_BUFFER | mutableFlag);
         }
     }
-    else if (const auto structuredBufferType = as<HLSLStructuredBufferTypeBase>(type))
+    else if (const auto structuredBufferType = as<HLSLStructuredBufferTypeBase>(type);
+             structuredBufferType)
     {
         if (as<HLSLStructuredBufferType>(type))
         {
@@ -1796,7 +1863,7 @@ SlangBindingType _calcResourceBindingType(Type* type)
     {
         return SLANG_BINDING_TYPE_RAY_TRACING_ACCELERATION_STRUCTURE;
     }
-    else if (const auto untypedBufferType = as<UntypedBufferResourceType>(type))
+    else if (const auto untypedBufferType = as<UntypedBufferResourceType>(type); untypedBufferType)
     {
         if (as<HLSLByteAddressBufferType>(type))
         {
@@ -3250,6 +3317,11 @@ SLANG_API bool spReflectionVariable_HasDefaultValue(SlangReflectionVariable* inV
     {
         return varDecl->initExpr != nullptr;
     }
+    if (auto enumCaseDecl = as<EnumCaseDecl>(decl))
+    {
+        auto constantVal = as<ConstantIntVal>(enumCaseDecl->tagVal);
+        return constantVal != nullptr;
+    }
 
     return false;
 }
@@ -3264,6 +3336,63 @@ spReflectionVariable_GetDefaultValueInt(SlangReflectionVariable* inVar, int64_t*
         {
             *rs = constantVal->getValue();
             return 0;
+        }
+        else if (auto cexpr = as<IntegerLiteralExpr>(varDecl->initExpr))
+        {
+            *rs = cexpr->value;
+            return 0;
+        }
+        else if (auto implicitCastExpr = as<ImplicitCastExpr>(varDecl->initExpr))
+        {
+            auto base = implicitCastExpr->arguments[0];
+            if (auto intLit = as<IntegerLiteralExpr>(base))
+            {
+                *rs = (int64_t)intLit->value;
+                return 0;
+            }
+            else if (auto floatLit = as<FloatingPointLiteralExpr>(base))
+            {
+                *rs = (int64_t)floatLit->value;
+                return 0;
+            }
+        }
+    }
+    else if (auto enumCaseDecl = as<EnumCaseDecl>(decl))
+    {
+        if (auto constantVal = as<ConstantIntVal>(enumCaseDecl->tagVal))
+        {
+            *rs = constantVal->getValue();
+            return 0;
+        }
+    }
+
+    return SLANG_E_INVALID_ARG;
+}
+
+SLANG_API SlangResult
+spReflectionVariable_GetDefaultValueFloat(SlangReflectionVariable* inVar, float* rs)
+{
+    auto decl = convert(inVar).getDecl();
+    if (auto varDecl = as<VarDeclBase>(decl))
+    {
+        if (auto cexpr = as<FloatingPointLiteralExpr>(varDecl->initExpr))
+        {
+            *rs = (float)cexpr->value;
+            return 0;
+        }
+        else if (auto implicitCastExpr = as<ImplicitCastExpr>(varDecl->initExpr))
+        {
+            auto base = implicitCastExpr->arguments[0];
+            if (auto intLit = as<IntegerLiteralExpr>(base))
+            {
+                *rs = (float)intLit->value;
+                return 0;
+            }
+            else if (auto floatLit = as<FloatingPointLiteralExpr>(base))
+            {
+                *rs = (float)floatLit->value;
+                return 0;
+            }
         }
     }
 
@@ -3778,6 +3907,10 @@ SLANG_API SlangDeclKind spReflectionDecl_getKind(SlangReflectionDecl* decl)
     {
         return SLANG_DECL_KIND_NAMESPACE;
     }
+    else if (as<EnumDecl>(slangDecl))
+    {
+        return SLANG_DECL_KIND_ENUM;
+    }
     else
         return SLANG_DECL_KIND_UNSUPPORTED_FOR_REFLECTION;
 }
@@ -4198,7 +4331,6 @@ SLANG_API void spReflectionEntryPoint_getComputeThreadGroupSize(
     auto astBuilder = entryPointLayout->program->getLinkage()->getASTBuilder();
     SLANG_AST_BUILDER_RAII(astBuilder);
 
-    // First look for the HLSL case, where we have an attribute attached to the entry point function
     auto numThreadsAttribute = entryPointFunc.getDecl()->findModifier<NumThreadsAttribute>();
     if (numThreadsAttribute)
     {
@@ -4509,6 +4641,14 @@ SLANG_API size_t spReflection_getGlobalConstantBufferSize(SlangReflection* inPro
     return getReflectionSize(uniform->count);
 }
 
+SLANG_API SlangInt spReflection_getBindlessSpaceIndex(SlangReflection* inProgram)
+{
+    auto program = convert(inProgram);
+    if (!program)
+        return -1; // -1 means bindless resource heap is not used.
+    return program->bindlessSpaceIndex;
+}
+
 SLANG_API SlangReflectionType* spReflection_specializeType(
     SlangReflection* inProgramLayout,
     SlangReflectionType* inType,
@@ -4527,16 +4667,28 @@ SLANG_API SlangReflectionType* spReflection_specializeType(
     auto linkage = programLayout->getProgram()->getLinkage();
 
     DiagnosticSink sink(linkage->getSourceManager(), Lexer::sourceLocationLexer);
+    try
+    {
+        auto specializedType = linkage->specializeType(
+            unspecializedType,
+            specializationArgCount,
+            (Type* const*)specializationArgs,
+            &sink);
 
-    auto specializedType = linkage->specializeType(
-        unspecializedType,
-        specializationArgCount,
-        (Type* const*)specializationArgs,
-        &sink);
+        sink.getBlobIfNeeded(outDiagnostics);
 
-    sink.getBlobIfNeeded(outDiagnostics);
-
-    return convert(specializedType);
+        return convert(specializedType);
+    }
+    catch (const AbortCompilationException& e)
+    {
+        outputExceptionDiagnostic(e, sink, outDiagnostics);
+        return nullptr;
+    }
+    catch (...)
+    {
+        outputExceptionDiagnostic(sink, outDiagnostics);
+        return nullptr;
+    }
 }
 
 
@@ -4558,51 +4710,63 @@ SLANG_API SlangReflectionGeneric* spReflection_specializeGeneric(
     auto linkage = programLayout->getProgram()->getLinkage();
 
     DiagnosticSink sink(linkage->getSourceManager(), Lexer::sourceLocationLexer);
-
-    List<Expr*> argExprs;
-    for (SlangInt i = 0; i < argCount; ++i)
+    try
     {
-        auto argType = argTypes[i];
-        auto arg = args[i];
-
-        switch (argType)
+        List<Expr*> argExprs;
+        for (SlangInt i = 0; i < argCount; ++i)
         {
-        case SLANG_GENERIC_ARG_TYPE:
+            auto argType = argTypes[i];
+            auto arg = args[i];
+
+            switch (argType)
             {
-                auto type = convert(arg.typeVal);
-                auto declRefType = as<DeclRefType>(type);
-                auto declRefExpr = astBuilder->create<DeclRefExpr>();
-                declRefExpr->declRef = declRefType->getDeclRef();
-                declRefExpr->type.type = astBuilder->getOrCreate<TypeType>(type);
-                argExprs.add(declRefExpr);
-                break;
+            case SLANG_GENERIC_ARG_TYPE:
+                {
+                    auto type = convert(arg.typeVal);
+                    auto declRefType = as<DeclRefType>(type);
+                    auto declRefExpr = astBuilder->create<DeclRefExpr>();
+                    declRefExpr->declRef = declRefType->getDeclRef();
+                    declRefExpr->type.type = astBuilder->getOrCreate<TypeType>(type);
+                    argExprs.add(declRefExpr);
+                    break;
+                }
+            case SLANG_GENERIC_ARG_INT:
+                {
+                    auto literalExpr = astBuilder->create<IntegerLiteralExpr>();
+                    literalExpr->value = args[i].intVal;
+                    literalExpr->type = astBuilder->getIntType();
+                    argExprs.add(literalExpr);
+                    break;
+                }
+            case SLANG_GENERIC_ARG_BOOL:
+                {
+                    auto literalExpr = astBuilder->create<BoolLiteralExpr>();
+                    literalExpr->value = args[i].boolVal;
+                    literalExpr->type = astBuilder->getBoolType();
+                    argExprs.add(literalExpr);
+                    break;
+                }
+            default:
+                // abort (TODO: throw a proper error)
+                return nullptr;
             }
-        case SLANG_GENERIC_ARG_INT:
-            {
-                auto literalExpr = astBuilder->create<IntegerLiteralExpr>();
-                literalExpr->value = args[i].intVal;
-                literalExpr->type = astBuilder->getIntType();
-                argExprs.add(literalExpr);
-                break;
-            }
-        case SLANG_GENERIC_ARG_BOOL:
-            {
-                auto literalExpr = astBuilder->create<BoolLiteralExpr>();
-                literalExpr->value = args[i].boolVal;
-                literalExpr->type = astBuilder->getBoolType();
-                argExprs.add(literalExpr);
-                break;
-            }
-        default:
-            // abort (TODO: throw a proper error)
-            return nullptr;
         }
+
+        auto specialized = linkage->specializeGeneric(slangGeneric, argExprs, &sink);
+        sink.getBlobIfNeeded(outDiagnostics);
+
+        return convertDeclToGeneric(specialized);
     }
-
-    auto specialized = linkage->specializeGeneric(slangGeneric, argExprs, &sink);
-    sink.getBlobIfNeeded(outDiagnostics);
-
-    return convertDeclToGeneric(specialized);
+    catch (const AbortCompilationException& e)
+    {
+        outputExceptionDiagnostic(e, sink, outDiagnostics);
+        return nullptr;
+    }
+    catch (...)
+    {
+        outputExceptionDiagnostic(sink, outDiagnostics);
+        return nullptr;
+    }
 }
 
 

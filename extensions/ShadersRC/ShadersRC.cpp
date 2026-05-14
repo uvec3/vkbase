@@ -1,15 +1,12 @@
 #include "ShadersRC.hpp"
 
-
-#include <execution>
-#include <locale>
-#include <map>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
 #include "slang/slang/external/spirv-tools/include/spirv-tools/libspirv.hpp"
-#include "spirv-tools/libspirv.h"
+#include  "slang/slang/external/spirv-tools/include/spirv-tools/libspirv.h"
+#include  "slang/slang/external/spirv-tools/include/spirv-tools/optimizer.hpp"
 
 namespace vkbase::ShadersRC
 {
@@ -49,47 +46,27 @@ namespace vkbase::ShadersRC
 
     std::vector<uint32_t> optimize_spirv(const std::vector<uint32_t> &spirv_code)
     {
-        // spvtools::SpirvTools spirv_tools(SPV_ENV_UNIVERSAL_1_6);
-        // spirv_tools.SetMessageConsumer([](spv_message_level_t level, const char *, const spv_position_t &position,
-        //                                   const char *message) {
-        //     std::string level_str;
-        //     switch (level) {
-        //         case SPV_MSG_FATAL:
-        //             level_str = "FATAL";
-        //             break;
-        //         case SPV_MSG_INTERNAL_ERROR:
-        //             level_str = "INTERNAL ERROR";
-        //             break;
-        //         case SPV_MSG_ERROR:
-        //             level_str = "ERROR";
-        //             break;
-        //         case SPV_MSG_WARNING:
-        //             level_str = "WARNING";
-        //             break;
-        //         case SPV_MSG_INFO:
-        //             level_str = "INFO";
-        //             break;
-        //         case SPV_MSG_DEBUG:
-        //             level_str = "DEBUG";
-        //             break;
-        //     }
-        //     throw std::runtime_error("SPIR-V Optimization " + level_str + " at " +
-        //                              std::to_string(position.index) + ": " + message);
-        // });
-        //
-        // std::vector<uint32_t> optimized_spirv;
-        // spvtools::OptimizerOptions options;
-        // options.set_run_validator(true);
-        //
-        // bool success = spirv_tools.(
-        //     spirv_code.data(), spirv_code.size(),
-        //     spvtools::OptimizerOptions(), &optimized_spirv);
-        //
-        // if (!success) {
-        //     throw std::runtime_error("SPIR-V optimization failed.");
-        // }
-        //
-        // return optimized_spirv;
-        return {};
+        spvtools::Optimizer optimizer(SPV_ENV_VULKAN_1_4);
+        optimizer.RegisterPerformancePasses();
+        optimizer.SetMessageConsumer([](spv_message_level_t level, const char* source, const spv_position_t& position, const char* message) {
+            std::string level_str;
+            switch (level) {
+                case SPV_MSG_FATAL: level_str = "FATAL"; break;
+                case SPV_MSG_INTERNAL_ERROR: level_str = "INTERNAL_ERROR"; break;
+                case SPV_MSG_ERROR: level_str = "ERROR"; break;
+                case SPV_MSG_WARNING: level_str = "WARNING"; break;
+                case SPV_MSG_INFO: level_str = "INFO"; break;
+                default: level_str = "UNKNOWN"; break;
+            }
+            std::cerr << "[" << level_str << "] " <<": " << message << std::endl;
+        });
+
+        std::vector<uint32_t> optimized_spirv;
+        if (!optimizer.Run(spirv_code.data(), spirv_code.size(), &optimized_spirv)) {
+            std::cerr<<"Failed to optimize SPIR-V";
+            return spirv_code;
+        }
+
+        return optimized_spirv;
     }
 }

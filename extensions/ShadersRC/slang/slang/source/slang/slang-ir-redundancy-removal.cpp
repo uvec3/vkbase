@@ -217,6 +217,14 @@ static bool eliminateRedundantTemporaryCopyInFunc(IRFunc* func)
                     if (param->findDecoration<IRSemanticDecoration>())
                         continue;
 
+                // If loadPtr is an instruction (has a parent block), it must be in the same
+                // block as destPtr. Otherwise, if loadPtr is computed inside a conditional but
+                // destPtr is used outside, we would create a dominance violation after replacement.
+                auto loadPtrBlock = as<IRBlock>(loadPtr->getParent());
+                auto destPtrBlock = as<IRBlock>(destPtr->getParent());
+                if (loadPtrBlock && loadPtrBlock != destPtrBlock)
+                    continue;
+
                 // Check all uses of the destination variable
                 for (auto use = destPtr->firstUse; use; use = use->nextUse)
                 {
@@ -480,7 +488,7 @@ bool tryRemoveRedundantStore(IRGlobalValueWithCode* func, IRStoreBase* store)
 
     // A store can be removed if it stores into a local variable
     // that has no other uses than store.
-    if (const auto varInst = as<IRVar>(rootVar))
+    if (const auto varInst = as<IRVar>(rootVar); varInst)
     {
         bool hasNonStoreUse = false;
         // If the entire access chain doesn't non-store use, we can safely remove it.

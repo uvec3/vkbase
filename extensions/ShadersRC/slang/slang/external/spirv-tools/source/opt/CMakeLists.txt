@@ -75,6 +75,7 @@ set(SPIRV_TOOLS_OPT_SOURCES
   ir_context.h
   ir_loader.h
   licm_pass.h
+  legalize_multidim_array_pass.h
   liveness.h
   local_access_chain_convert_pass.h
   local_redundancy_elimination.h
@@ -197,6 +198,7 @@ set(SPIRV_TOOLS_OPT_SOURCES
   ir_context.cpp
   ir_loader.cpp
   licm_pass.cpp
+  legalize_multidim_array_pass.cpp
   liveness.cpp
   local_access_chain_convert_pass.cpp
   local_redundancy_elimination.cpp
@@ -256,11 +258,6 @@ set(SPIRV_TOOLS_OPT_SOURCES
   workaround1209.cpp
   wrap_opkill.cpp
 )
-
-if(MSVC AND (NOT ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")))
-  # Enable parallel builds across four cores for this lib
-  add_definitions(/MP4)
-endif()
 
 spvtools_pch(SPIRV_TOOLS_OPT_SOURCES pch_source_opt)
 

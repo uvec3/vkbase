@@ -86,6 +86,7 @@ public:
     static IRTypeLayoutRules* getStd140();
     static IRTypeLayoutRules* getNatural();
     static IRTypeLayoutRules* getC();
+    static IRTypeLayoutRules* getCUDA();
     static IRTypeLayoutRules* getConstantBuffer();
     static IRTypeLayoutRules* getLLVM();
     static IRTypeLayoutRules* get(IRTypeLayoutRuleName name);
@@ -140,5 +141,11 @@ Result getStd430SizeAndAlignment(
 /// field is considered to have no std430 offset.
 ///
 Result getStd430Offset(TargetRequest* targetReq, IRStructField* field, IRIntegerValue* outOffset);
+
+std::optional<IRTypeLayoutRuleName> getTypeLayoutRuleNameFromOp(
+    IROp layoutTypeOp,
+    IRTypeLayoutRuleName defaultLayout);
+
+IROp getOpFromTypeLayoutRuleName(IRTypeLayoutRuleName ruleName);
 
 } // namespace Slang

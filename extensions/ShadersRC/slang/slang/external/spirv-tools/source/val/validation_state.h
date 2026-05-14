@@ -271,9 +271,26 @@ class ValidationState_t {
   }
 
   /// Returns the maximum number of primitives mesh shader can emit
-  uint32_t GetOutputPrimitivesEXT(uint32_t entry_point) {
+  uint32_t GetOutputPrimitivesEXT(uint32_t entry_point) const {
     auto entry = entry_point_to_output_primitives_.find(entry_point);
     if (entry != entry_point_to_output_primitives_.end()) {
+      auto inst = entry->second;
+      return inst->GetOperandAs<uint32_t>(2);
+    }
+    return 0;
+  }
+
+  /// Registers that the entry point maximum number of vertices
+  /// mesh shader will ever emit
+  void RegisterEntryPointOutputVertices(uint32_t entry_point,
+                                        const Instruction* inst) {
+    entry_point_to_output_vertices_[entry_point] = inst;
+  }
+
+  /// Returns the maximum number of primitives mesh shader can emit
+  uint32_t GetOutputVertices(uint32_t entry_point) const {
+    auto entry = entry_point_to_output_vertices_.find(entry_point);
+    if (entry != entry_point_to_output_vertices_.end()) {
       auto inst = entry->second;
       return inst->GetOperandAs<uint32_t>(2);
     }
@@ -522,6 +539,29 @@ class ValidationState_t {
         [dec](const Decoration& d) { return dec == d.dec_type(); });
   }
 
+  /// Returns true if the given id <id> has the given built-in decoration <bt>,
+  /// otherwise returns false.
+  bool IsBuiltin(spv::Id id, spv::BuiltIn bt) {
+    for (auto& dec : id_decorations(id)) {
+      if (dec.dec_type() == spv::Decoration::BuiltIn) {
+        if (dec.builtin() == bt) return true;
+        break;
+      }
+    }
+    return false;
+  }
+
+  bool ContainsBuiltin(spv::Id id, spv::BuiltIn bt) {
+    const auto isHeapType = [&](const Instruction* inst) {
+      if (HasCapability(spv::Capability::DescriptorHeapEXT) &&
+          IsBuiltin(inst->id(), bt)) {
+        return true;
+      }
+      return false;
+    };
+    return ContainsType(uint32_t(id), isHeapType);
+  }
+
   /// Finds id's def, if it exists.  If found, returns the definition otherwise
   /// nullptr
   const Instruction* FindDef(uint32_t id) const;
@@ -664,6 +704,7 @@ class ValidationState_t {
   // Only works for types not for objects.
   bool IsVoidType(uint32_t id) const;
   bool IsScalarType(uint32_t id) const;
+  bool IsVectorType(uint32_t id) const;
   bool IsBfloat16ScalarType(uint32_t id) const;
   bool IsBfloat16VectorType(uint32_t id) const;
   bool IsBfloat16CoopMatType(uint32_t id) const;
@@ -672,7 +713,7 @@ class ValidationState_t {
   bool IsFP8VectorType(uint32_t id) const;
   bool IsFP8CoopMatType(uint32_t id) const;
   bool IsFP8Type(uint32_t id) const;
-  bool IsFloatScalarType(uint32_t id) const;
+  bool IsFloatScalarType(uint32_t id, uint32_t width = 0) const;
   bool IsFloatArrayType(uint32_t id) const;
   bool IsFloatVectorType(uint32_t id) const;
   bool IsFloat16Vector2Or4Type(uint32_t id) const;
@@ -707,6 +748,8 @@ class ValidationState_t {
   bool IsIntCooperativeVectorNVType(uint32_t id) const;
   bool IsUnsignedIntCooperativeVectorNVType(uint32_t id) const;
   bool IsTensorType(uint32_t id) const;
+  bool IsDescriptorType(spv::Op opcode) const;
+  bool IsDescriptorType(uint32_t id) const;
   // When |length| is not 0, return true only if the array length is equal to
   // |length| and the array length is not defined by a specialization constant.
   bool IsArrayType(uint32_t id, uint64_t length = 0) const;
@@ -736,6 +779,8 @@ class ValidationState_t {
   // This is designed to pass in the %type from a PSB pointer
   //   %ptr = OpTypePointer PhysicalStorageBuffer %type
   uint32_t GetLargestScalarType(uint32_t id) const;
+  bool IsDescriptorHeapBaseVariable(const Instruction* inst);
+  const Instruction* FindUntypedBaseVariable(const Instruction* inst);
 
   // Returns true if |id| is a type id that contains |type| (or integer or
   // floating point type) of |width| bits.
@@ -955,6 +1000,10 @@ class ValidationState_t {
            qcom_image_processing_consumers_.end();
   }
 
+  // Get the list of line lengths for a given result ID of a DebugSource
+  // instruction Will create a new vector if DebugSource is not found
+  std::vector<uint32_t>& GetDebugSourceLineLength(uint32_t id);
+
  private:
   ValidationState_t(const ValidationState_t&);
 
@@ -1104,6 +1153,10 @@ class ValidationState_t {
   std::unordered_map<uint32_t, const Instruction*>
       entry_point_to_output_primitives_;
 
+  // Mapping entry point -> OutputVertices execution mode instruction
+  std::unordered_map<uint32_t, const Instruction*>
+      entry_point_to_output_vertices_;
+
   /// Mapping function -> array of entry points inside this
   /// module which can (indirectly) call the function.
   std::unordered_map<uint32_t, std::vector<uint32_t>> function_to_entry_points_;
@@ -1128,6 +1181,10 @@ class ValidationState_t {
   // The IDs of types of pointers to tensors.  This is populated in the
   // TypePass.
   std::unordered_set<uint32_t> pointer_to_tensor_;
+
+  /// Maps an id of DebugSource to a vector that contains the length of each
+  /// line side of it. (Also will have the DebugSourceContinued source included)
+  std::unordered_map<uint32_t, std::vector<uint32_t>> debug_source_line_length_;
 
   /// Maps ids to friendly names.
   std::unique_ptr<spvtools::FriendlyNameMapper> friendly_mapper_;

@@ -6,10 +6,23 @@
 // enumerating specialization parameters, and validating
 // attempts to specialize shader code.
 
+#include "../core/slang-type-text-util.h"
 #include "slang-lookup.h"
+#include "slang-parameter-binding.h"
+#include "slang-profile.h"
+#include "slang-rich-diagnostics.h"
+#include "slang-target.h"
 
 namespace Slang
 {
+
+// Direction of a semantic value (input from previous stage, or output to next stage)
+enum class SemanticDirection
+{
+    Input,
+    Output,
+};
+
 static bool isValidThreadDispatchIDType(Type* type)
 {
     // Can accept a single int/unit
@@ -47,21 +60,441 @@ static bool isValidThreadDispatchIDType(Type* type)
     }
 }
 
+// Unwrap Conditional<T, hasValue> types to T.
+// If the type is Conditional<T, hasValue> (where hasValue can be true or false),
+// returns the inner type T. Otherwise, returns the original type unchanged.
+static Type* unwrapConditionalType(Type* type)
+{
+    if (auto conditionalType = as<ConditionalType>(type))
+        return conditionalType->getValueType();
+    return type;
+}
+
+// Check if two types are compatible for system value semantics.
+// This is stricter than canCoerce alone, as it requires that both types have
+// the same "shape" (both scalars or both vectors) to prevent scalar-to-vector
+// promotions like uint -> float4.
+static bool isSemanticTypeCompatible(SemanticsVisitor* visitor, Type* expectedType, Type* type)
+{
+    // Unwrap Conditional<T, hasValue> to T
+    type = unwrapConditionalType(type);
+
+    // Must be coercible
+    if (!visitor->canCoerce(expectedType, type, nullptr))
+        return false;
+
+    // Both must have the same shape (both scalar or both vector)
+    bool expectedIsVector = as<VectorExpressionType>(expectedType) != nullptr;
+    bool typeIsVector = as<VectorExpressionType>(type) != nullptr;
+
+    return expectedIsVector == typeIsVector;
+}
+
+// Look up a SemanticDecl by name in the given scope.
+// Semantic names in core.meta.slang are stored lowercase for case-insensitive matching.
+static SemanticDecl* lookUpSemanticDecl(
+    ASTBuilder* astBuilder,
+    SemanticsVisitor* visitor,
+    const String& semanticName,
+    Scope* scope)
+{
+    auto namePool = astBuilder->getGlobalSession()->getNamePool();
+
+    // Lowercase the name for lookup (semantics in core.meta.slang are lowercase)
+    String lowerName = semanticName.toLower();
+    auto name = namePool->getName(lowerName);
+    auto lookupResult = lookUp(astBuilder, visitor, name, scope, LookupMask::Semantic);
+
+    if (!lookupResult.isValid())
+        return nullptr;
+
+    return as<SemanticDecl>(lookupResult.item.declRef.getDecl());
+}
+
+// Validate that type being used for a system value semantic is compatible with the semantic.
+static void validateSystemValueSemanticForType(
+    SemanticsVisitor* visitor,
+    DiagnosticSink* sink,
+    SourceLoc loc,
+    Type* type,
+    HLSLSimpleSemantic* semantic,
+    Stage stage,
+    SemanticDirection direction,
+    Scope* scope)
+{
+    if (!semantic || !type)
+        return;
+
+    auto semanticNameSlice = semantic->name.getContent();
+
+    // Only validate SV_ semantics
+    if (!semanticNameSlice.startsWithCaseInsensitive(toSlice("sv_")))
+        return;
+
+    auto astBuilder = visitor->getASTBuilder();
+
+    // Split name and index (e.g., "SV_Target0" -> "SV_Target" + "0")
+    UnownedStringSlice baseNameSlice;
+    UnownedStringSlice indexSlice;
+    splitNameAndIndex(semanticNameSlice, baseNameSlice, indexSlice);
+    String baseName = String(baseNameSlice);
+
+    // Look up the SemanticDecl
+    auto semanticDecl = lookUpSemanticDecl(astBuilder, visitor, baseName, scope);
+
+    // If no SemanticDecl found, the semantic is not defined in core.meta.slang
+    if (!semanticDecl)
+    {
+        diagnoseCapabilityErrors(
+            sink,
+            visitor->getOptionSet(),
+            Diagnostics::UnknownSystemValueSemantic{.semanticName = baseName, .location = loc});
+        return;
+    }
+
+    // If the semantic has no accessors defined, it accepts any type (e.g., ray tracing payloads)
+    bool hasAnyAccessors = false;
+    for (auto member : semanticDecl->getMembers())
+    {
+        if (as<SemanticGetterDecl>(member) || as<SemanticSetterDecl>(member))
+        {
+            hasAnyAccessors = true;
+            break;
+        }
+    }
+
+    if (!hasAnyAccessors)
+        return;
+
+    bool isOutput = (direction == SemanticDirection::Output);
+    const char* directionStr = isOutput ? "output" : "input";
+    const char* stageStr = getStageName(stage);
+
+    // Look for matching accessor (getter for input, setter for output)
+    bool foundMatchingAccessor = false;
+    bool foundAccessorForDirection = false;
+    List<Type*> validTypes;
+
+    for (auto member : semanticDecl->getMembers())
+    {
+        // Check for getter (input) or setter (output)
+        bool isGetter = as<SemanticGetterDecl>(member) != nullptr;
+        bool isSetter = as<SemanticSetterDecl>(member) != nullptr;
+
+        if (!isGetter && !isSetter)
+            continue;
+
+        // Direction check: getter = input, setter = output
+        bool accessorIsOutput = isSetter;
+        if (accessorIsOutput != isOutput)
+            continue;
+
+        // Check if the accessor's stage requirement matches the current stage
+        // Multiple [require(stage)] attributes are merged into a single capabilitySet
+        // using union (OR), so we check if the current stage is compatible
+        if (auto requireAttr = member->findModifier<RequireCapabilityAttribute>())
+        {
+            if (requireAttr->capabilitySet)
+            {
+                CapabilityAtom currentStage = getAtomFromStage(stage);
+                // Use !isIncompatibleWith because the capabilitySet is a union of stages
+                // (e.g., compute | mesh | amplification), and we want to check if the
+                // current stage is ANY of the allowed stages
+                if (requireAttr->capabilitySet->isIncompatibleWith(currentStage))
+                    continue;
+            }
+        }
+
+        foundAccessorForDirection = true;
+
+        // Get the accessor's type
+        Type* accessorType = nullptr;
+        if (auto getter = as<SemanticGetterDecl>(member))
+            accessorType = getter->type.type;
+        else if (auto setter = as<SemanticSetterDecl>(member))
+            accessorType = setter->type.type;
+
+        if (!accessorType)
+        {
+            // Type not resolved - this shouldn't happen after semantic checking
+            continue;
+        }
+
+        if (isSemanticTypeCompatible(visitor, accessorType, type))
+        {
+            foundMatchingAccessor = true;
+            break;
+        }
+
+        // Special case: if accessor is unsized array and type is sized array with same element type
+        if (auto accessorArrayType = as<ArrayExpressionType>(accessorType))
+        {
+            if (auto typeArrayType = as<ArrayExpressionType>(type))
+            {
+                // Accessor has unsized array and type has any array - check element types
+                if (accessorArrayType->isUnsized())
+                {
+                    if (isSemanticTypeCompatible(
+                            visitor,
+                            accessorArrayType->getElementType(),
+                            typeArrayType->getElementType()))
+                    {
+                        foundMatchingAccessor = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Collect valid types for error message
+        validTypes.add(accessorType);
+    }
+
+    if (!foundAccessorForDirection)
+    {
+        // No accessor defined for this stage+direction combination
+        diagnoseCapabilityErrors(
+            sink,
+            visitor->getOptionSet(),
+            Diagnostics::SystemValueSemanticInvalidDirection{
+                .semantic = baseName,
+                .direction = directionStr,
+                .stage = stageStr,
+                .location = loc});
+    }
+    else if (!foundMatchingAccessor)
+    {
+        // Type mismatch - build string of valid types
+        StringBuilder validTypesStr;
+        for (Index validTypeIndex = 0; validTypeIndex < validTypes.getCount(); validTypeIndex++)
+        {
+            if (validTypeIndex > 0)
+                validTypesStr << "' or '";
+            validTypesStr << validTypes[validTypeIndex];
+        }
+
+        diagnoseCapabilityErrors(
+            sink,
+            visitor->getOptionSet(),
+            Diagnostics::SystemValueSemanticInvalidType{
+                .type = unwrapConditionalType(type),
+                .semantic = baseName,
+                .expectedTypes = validTypesStr,
+                .location = loc});
+    }
+}
+
+// Check if a system value semantic name is per-primitive in mesh shaders.
+// These semantics must only appear in OutputPrimitives (or 'out primitives') parameters.
+static bool isPerPrimitiveMeshSemantic(UnownedStringSlice semanticName)
+{
+    return semanticName.caseInsensitiveEquals(toSlice("sv_cullprimitive")) ||
+           semanticName.caseInsensitiveEquals(toSlice("sv_primitiveid")) ||
+           semanticName.caseInsensitiveEquals(toSlice("sv_rendertargetarrayindex")) ||
+           semanticName.caseInsensitiveEquals(toSlice("sv_viewportarrayindex")) ||
+           semanticName.caseInsensitiveEquals(toSlice("sv_shadingrate"));
+}
+
+// Recursively check struct fields for per-primitive mesh shader semantics.
+// Emits a diagnostic if any per-primitive semantic is found in a vertex/index output.
+static void validateNoPerPrimitiveSemanticsInType(
+    DiagnosticSink* sink,
+    Type* type,
+    ASTBuilder* astBuilder,
+    HashSet<Type*>& seenTypes)
+{
+    if (!type)
+        return;
+    if (seenTypes.contains(type))
+        return;
+    seenTypes.add(type);
+
+    auto declRefType = as<DeclRefType>(type);
+    if (!declRefType)
+        return;
+
+    auto structDeclRef = declRefType->getDeclRef().as<StructDecl>();
+    if (!structDeclRef)
+        return;
+
+    for (auto fieldDeclRef : getFields(astBuilder, structDeclRef, MemberFilterStyle::Instance))
+    {
+        auto fieldDecl = fieldDeclRef.getDecl();
+
+        // Recurse into nested struct types, unwrapping conditional and array wrappers first
+        if (auto fieldVarDecl = as<VarDeclBase>(fieldDecl))
+        {
+            Type* fieldType = unwrapConditionalType(fieldVarDecl->getType());
+            while (auto arrayType = as<ArrayExpressionType>(fieldType))
+                fieldType = unwrapConditionalType(arrayType->getElementType());
+            validateNoPerPrimitiveSemanticsInType(sink, fieldType, astBuilder, seenTypes);
+        }
+
+        // Check if this field has a per-primitive system value semantic
+        auto semantic = fieldDecl->findModifier<HLSLSimpleSemantic>();
+        if (!semantic)
+            continue;
+
+        auto name = semantic->name.getContent();
+        if (isPerPrimitiveMeshSemantic(name))
+        {
+            sink->diagnose(Diagnostics::PerPrimitiveSemanticInVertexOutput{
+                .semantic = String(name),
+                .location = fieldDecl->loc});
+        }
+    }
+}
+
+
+// Validate system value semantics on a declaration recursively.
+// and validates any SV_ semantic against the SemanticDecl definitions in core module.
+static void validateSystemValueSemantic(
+    SemanticsVisitor* visitor,
+    DiagnosticSink* sink,
+    Decl* decl,
+    Stage stage,
+    SemanticDirection direction,
+    Scope* scope,
+    UInt recursionDepth = 0)
+{
+    static constexpr UInt kMaxSystemValueSemanticRecursionDepth = 128;
+    if (!decl)
+        return;
+
+    if (recursionDepth >= kMaxSystemValueSemanticRecursionDepth)
+    {
+        if (sink)
+        {
+            Diagnostics::MaximumTypeNestingLevelExceeded diag = {};
+            diag.location = _getTypeNestingDiagnosticPosForDecl(decl);
+            sink->diagnose(diag);
+        }
+        return;
+    }
+
+    // Get the type from the declaration
+    Type* type = nullptr;
+    if (auto varDecl = as<VarDeclBase>(decl))
+        type = varDecl->getType();
+    else if (auto funcDecl = as<FuncDecl>(decl))
+        type = funcDecl->returnType.type;
+    else
+        return;
+
+    if (!type)
+        return;
+
+    // Unwrap Conditional<T, hasValue> to T before checking for wrapper types
+    type = unwrapConditionalType(type);
+
+    // Mesh shader output types (OutputVertices, OutputPrimitives, OutputIndices) and
+    // geometry shader stream types (PointStream, LineStream, TriangleStream) are
+    // implicitly outputs - they don't require the 'out' keyword.
+    // They need to be unwrapped to the element type before validating semantics,
+    // and they could contain Conditional<T, hasValue> types, so we need to unwrap them again.
+    if (auto meshOutputType = as<MeshOutputType>(type))
+    {
+        auto elementType = meshOutputType->getElementType();
+        // If this is a vertex or index output, validate that no per-primitive semantics are used.
+        // Per-primitive semantics must only appear in OutputPrimitives / 'out primitives'.
+        if (stage == Stage::Mesh && !as<PrimitivesType>(meshOutputType))
+        {
+            if (auto semantic = decl->findModifier<HLSLSimpleSemantic>())
+            {
+                if (isPerPrimitiveMeshSemantic(semantic->name.getContent()))
+                {
+                    sink->diagnose(Diagnostics::PerPrimitiveSemanticInVertexOutput{
+                        .semantic = String(semantic->name.getContent()),
+                        .location = decl->loc});
+                }
+            }
+
+            HashSet<Type*> seenTypes;
+            validateNoPerPrimitiveSemanticsInType(
+                sink,
+                unwrapConditionalType(elementType),
+                visitor->getASTBuilder(),
+                seenTypes);
+        }
+        type = unwrapConditionalType(elementType);
+        direction = SemanticDirection::Output;
+    }
+    else if (auto streamOutputType = as<HLSLStreamOutputType>(type))
+    {
+        auto elementType = streamOutputType->getElementType();
+        type = unwrapConditionalType(elementType);
+        direction = SemanticDirection::Output;
+    }
+
+    auto astBuilder = visitor->getASTBuilder();
+
+    // If the type is a struct, recursively validate semantics on all fields
+    if (auto declRefType = as<DeclRefType>(type))
+    {
+        if (auto structDeclRef = declRefType->getDeclRef().as<StructDecl>())
+        {
+            for (auto fieldDeclRef :
+                 getFields(astBuilder, structDeclRef, MemberFilterStyle::Instance))
+            {
+                auto fieldDecl = fieldDeclRef.getDecl();
+                validateSystemValueSemantic(
+                    visitor,
+                    sink,
+                    fieldDecl,
+                    stage,
+                    direction,
+                    scope,
+                    recursionDepth + 1);
+            }
+        }
+    }
+
+    // Check if this decl has a system value semantic to validate
+    auto semantic = decl->findModifier<HLSLSimpleSemantic>();
+    if (!semantic)
+        return;
+
+    validateSystemValueSemanticForType(
+        visitor,
+        sink,
+        decl->loc,
+        type,
+        semantic,
+        stage,
+        direction,
+        scope);
+}
+
 /// Recursively walk `paramDeclRef` and add any existential/interface specialization parameters to
 /// `ioSpecializationParams`.
-static void _collectExistentialSpecializationParamsRec(
+static bool _collectExistentialSpecializationParamsRec(
     ASTBuilder* astBuilder,
     SpecializationParams& ioSpecializationParams,
-    DeclRef<VarDeclBase> paramDeclRef);
+    DeclRef<VarDeclBase> paramDeclRef,
+    DiagnosticSink* sink,
+    UInt recursionDepth);
 
 /// Recursively walk `type` and add any existential/interface specialization parameters to
 /// `ioSpecializationParams`.
-static void _collectExistentialSpecializationParamsRec(
+static bool _collectExistentialSpecializationParamsRec(
     ASTBuilder* astBuilder,
     SpecializationParams& ioSpecializationParams,
     Type* type,
-    SourceLoc loc)
+    SourceLoc loc,
+    DiagnosticSink* sink,
+    UInt recursionDepth)
 {
+    if (recursionDepth >= kMaxTypeNestingDepth)
+    {
+        if (sink)
+        {
+            Diagnostics::MaximumTypeNestingLevelExceeded diag = {};
+            diag.location = loc;
+            sink->diagnose(diag);
+        }
+        return false;
+    }
+
     // Whether or not something is an array does not affect
     // the number of existential slots it introduces.
     //
@@ -72,12 +505,13 @@ static void _collectExistentialSpecializationParamsRec(
 
     if (auto parameterGroupType = as<ParameterGroupType>(type))
     {
-        _collectExistentialSpecializationParamsRec(
+        return _collectExistentialSpecializationParamsRec(
             astBuilder,
             ioSpecializationParams,
             parameterGroupType->getElementType(),
-            loc);
-        return;
+            loc,
+            sink,
+            recursionDepth + 1);
     }
 
     if (auto declRefType = as<DeclRefType>(type))
@@ -103,10 +537,15 @@ static void _collectExistentialSpecializationParamsRec(
             for (auto fieldDeclRef :
                  getFields(astBuilder, structDeclRef, MemberFilterStyle::Instance))
             {
-                _collectExistentialSpecializationParamsRec(
-                    astBuilder,
-                    ioSpecializationParams,
-                    fieldDeclRef);
+                if (!_collectExistentialSpecializationParamsRec(
+                        astBuilder,
+                        ioSpecializationParams,
+                        fieldDeclRef,
+                        sink,
+                        recursionDepth + 1))
+                {
+                    return false;
+                }
             }
         }
     }
@@ -114,35 +553,50 @@ static void _collectExistentialSpecializationParamsRec(
     // TODO: We eventually need to handle cases like constant
     // buffers and parameter blocks that may have existential
     // element types.
+    return true;
 }
 
-static void _collectExistentialSpecializationParamsRec(
+static bool _collectExistentialSpecializationParamsRec(
     ASTBuilder* astBuilder,
     SpecializationParams& ioSpecializationParams,
-    DeclRef<VarDeclBase> paramDeclRef)
+    DeclRef<VarDeclBase> paramDeclRef,
+    DiagnosticSink* sink,
+    UInt recursionDepth)
 {
-    _collectExistentialSpecializationParamsRec(
+    return _collectExistentialSpecializationParamsRec(
         astBuilder,
         ioSpecializationParams,
         getType(astBuilder, paramDeclRef),
-        paramDeclRef.getLoc());
+        paramDeclRef.getLoc(),
+        sink,
+        recursionDepth);
 }
 
 
 /// Collect any interface/existential specialization parameters for `paramDeclRef` into
 /// `ioParamInfo` and `ioSpecializationParams`
-static void _collectExistentialSpecializationParamsForShaderParam(
+static bool _collectExistentialSpecializationParamsForShaderParam(
     ASTBuilder* astBuilder,
     ShaderParamInfo& ioParamInfo,
     SpecializationParams& ioSpecializationParams,
-    DeclRef<VarDeclBase> paramDeclRef)
+    DeclRef<VarDeclBase> paramDeclRef,
+    DiagnosticSink* sink)
 {
     Index beginParamIndex = ioSpecializationParams.getCount();
-    _collectExistentialSpecializationParamsRec(astBuilder, ioSpecializationParams, paramDeclRef);
+    if (!_collectExistentialSpecializationParamsRec(
+            astBuilder,
+            ioSpecializationParams,
+            paramDeclRef,
+            sink,
+            0))
+    {
+        return false;
+    }
     Index endParamIndex = ioSpecializationParams.getCount();
 
     ioParamInfo.firstSpecializationParamIndex = beginParamIndex;
     ioParamInfo.specializationParamCount = endParamIndex - beginParamIndex;
+    return true;
 }
 
 void EntryPoint::_collectGenericSpecializationParamsRec(Decl* decl)
@@ -172,6 +626,14 @@ void EntryPoint::_collectGenericSpecializationParamsRec(Decl* decl)
             param.flavor = SpecializationParam::Flavor::GenericValue;
             param.loc = genericValParam->loc;
             param.object = genericValParam;
+            m_genericSpecializationParams.add(param);
+        }
+        else if (auto genericValPackParam = as<GenericValuePackParamDecl>(m))
+        {
+            SpecializationParam param;
+            param.flavor = SpecializationParam::Flavor::GenericValue;
+            param.loc = genericValPackParam->loc;
+            param.object = genericValPackParam;
             m_genericSpecializationParams.add(param);
         }
     }
@@ -212,11 +674,15 @@ void EntryPoint::_collectShaderParams()
             ShaderParamInfo shaderParamInfo;
             shaderParamInfo.paramDeclRef = paramDeclRef;
 
-            _collectExistentialSpecializationParamsForShaderParam(
-                getLinkage()->getASTBuilder(),
-                shaderParamInfo,
-                m_existentialSpecializationParams,
-                paramDeclRef);
+            if (!_collectExistentialSpecializationParamsForShaderParam(
+                    getLinkage()->getASTBuilder(),
+                    shaderParamInfo,
+                    m_existentialSpecializationParams,
+                    paramDeclRef,
+                    nullptr))
+            {
+                return;
+            }
 
             m_shaderParams.add(shaderParamInfo);
         }
@@ -264,7 +730,9 @@ DeclRef<FuncDecl> findFunctionDeclByName(Module* translationUnit, Name* name, Di
     if (!entryPointFuncDeclRef)
     {
         auto translationUnitSyntax = translationUnit->getModuleDecl();
-        sink->diagnose(translationUnitSyntax, Diagnostics::entryPointFunctionNotFound, name);
+        sink->diagnose(Diagnostics::EntryPointFunctionNotFound{
+            .name = name->text,
+            .location = translationUnitSyntax->loc});
     }
     return entryPointFuncDeclRef;
 }
@@ -308,6 +776,327 @@ bool isBuiltinParameterType(Type* type)
     if (auto arrayType = as<ArrayExpressionType>(type))
         return isBuiltinParameterType(arrayType->getElementType());
     return true;
+}
+
+// Returns true if `type` is declared with `__intrinsic_type(op)` for the given
+// IR opcode. Used to detect intrinsic types such as `CoopMat` and `CoopVec`
+// which have no dedicated AST type class but carry an `IntrinsicTypeModifier`.
+static bool isIntrinsicTypeWithOp(Type* type, IROp op)
+{
+    auto declRefType = as<DeclRefType>(type);
+    if (!declRefType)
+        return false;
+    auto decl = declRefType->getDeclRef().getDecl();
+    if (!decl)
+        return false;
+
+    auto modifier = decl->findModifier<IntrinsicTypeModifier>();
+    if (!modifier)
+        return false;
+    return IROp(modifier->irOp) == op;
+}
+
+// Describes a rule for types that are invalid as entry-point varying parameters/return types.
+struct EntryPointVaryingTypeRule
+{
+    // Returns true if this type matches the rule (i.e., is invalid).
+    bool (*matches)(Type* type);
+
+    // Human-readable reason string for the diagnostic.
+    const char* reason;
+
+    // If non-null, this rule only applies when the target matches this predicate.
+    // When null, the rule applies to all targets.
+    bool (*targetPredicate)(CodeGenTarget target);
+
+    // If non-null, this rule only applies when the stage matches this predicate.
+    // When null, the rule applies to all stages for which the parameter/return
+    // can be a varying (see `canHaveVaryingInput` in `validateEntryPoint`).
+    bool (*stagePredicate)(Stage stage);
+};
+
+static bool _matchDifferentialPairType(Type* type)
+{
+    // Match both `DifferentialPair<T>` and `DifferentialPtrPair<T>` (the
+    // backward-mode autodiff ptr-pair type). They are represented by
+    // distinct AST classes but share the same varying-type restriction.
+    return as<DifferentialPairType>(type) != nullptr ||
+           as<DifferentialPtrPairType>(type) != nullptr;
+}
+
+static bool _matchAtomicType(Type* type)
+{
+    return as<AtomicType>(type) != nullptr;
+}
+
+static bool _matchCoopVectorType(Type* type)
+{
+    // `CoopVec` is declared in the core module as a struct carrying
+    // `__intrinsic_type(kIROp_CoopVectorType)`. Detect it via that modifier
+    // to stay consistent with how `_matchCoopMatrixType` handles `CoopMat`.
+    return isIntrinsicTypeWithOp(type, kIROp_CoopVectorType);
+}
+
+static bool _matchCoopMatrixType(Type* type)
+{
+    return isIntrinsicTypeWithOp(type, kIROp_CoopMatrixType);
+}
+
+static bool _matchVectorBoolType(Type* type)
+{
+    auto vecType = as<VectorExpressionType>(type);
+    if (!vecType)
+        return false;
+    auto elemType = as<BasicExpressionType>(vecType->getElementType());
+    if (!elemType)
+        return false;
+    return elemType->getBaseType() == BaseType::Bool;
+}
+
+static bool _matchMatrixWithOutOfRangeDimensions(Type* type)
+{
+    // Row and column counts outside the 1..4 range break downstream codegen
+    // (issue #9450). Only the entry-point varying site is restricted here;
+    // the constructed type itself is not rejected, so targets that can
+    // support larger matrices internally are unaffected.
+    auto matType = as<MatrixExpressionType>(type);
+    if (!matType)
+        return false;
+    auto isOutOfRange = [](IntVal* v)
+    {
+        if (auto cv = as<ConstantIntVal>(v))
+        {
+            auto n = cv->getValue();
+            return n < 1 || n > 4;
+        }
+        return false;
+    };
+    return isOutOfRange(matType->getRowCount()) || isOutOfRange(matType->getColumnCount());
+}
+
+// True for stages that use interface-block-style varyings in SPIR-V/GLSL
+// (i.e. the stages where the failure modes in issues #9446/#9448/#9449/#9452
+// were reproduced). Ray-tracing payload/attribute stages and the compute
+// stages do not use interface blocks and place fewer restrictions on the
+// varying type, so we avoid diagnosing those stages.
+//
+// Note: `Amplification` (task) shaders output via `TaskPayloadWorkgroupEXT`
+// rather than interface blocks, so they are not included here. `Mesh` shader
+// varying outputs *do* lower to interface blocks in SPIR-V, so it is.
+static bool _isInterfaceBlockVaryingStage(Stage stage)
+{
+    switch (stage)
+    {
+    case Stage::Vertex:
+    case Stage::Fragment:
+    case Stage::Geometry:
+    case Stage::Hull:
+    case Stage::Domain:
+    case Stage::Mesh:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static const EntryPointVaryingTypeRule kEntryPointVaryingTypeRules[] = {
+    // `DifferentialPair`/`DifferentialPtrPair` are autodiff wrapper types with
+    // no defined meaning at an inter-stage interface. Issue #9429 shows they
+    // crash the backend on every stage where they participate as varyings.
+    {_matchDifferentialPairType,
+     "DifferentialPair/DifferentialPtrPair is not a valid varying type",
+     nullptr,
+     nullptr},
+
+    // `Atomic<T>` is a storage-class wrapper, not a value type that can be
+    // passed across a shader interface. Issue #9443.
+    {_matchAtomicType, "Atomic is not a valid varying type", nullptr, nullptr},
+
+    // `CoopVec` and `CoopMat` generate invalid SPIR-V when placed into an
+    // interface block. Ray-tracing payload/attribute stages tolerate them,
+    // so we restrict the rule to interface-block varying stages
+    // (issues #9446, #9448, #9449).
+    {_matchCoopVectorType,
+     "CoopVec is not a valid varying type for this stage",
+     nullptr,
+     _isInterfaceBlockVaryingStage},
+    {_matchCoopMatrixType,
+     "CoopMat is not a valid varying type for this stage",
+     nullptr,
+     _isInterfaceBlockVaryingStage},
+
+    // `vector<bool>` produces invalid SPIR-V on interface-block stages
+    // (issue #9452). Compute and ray-tracing payload stages accept it in
+    // practice; only diagnose where the failure actually occurs.
+    {_matchVectorBoolType,
+     "vector<bool> is not a valid SPIR-V varying type for this stage",
+     isSPIRV,
+     _isInterfaceBlockVaryingStage},
+
+    // `matrix<T, R, C>` with row/column count outside 1..4 breaks downstream
+    // codegen on the interface-block stages (issue #9450).
+    {_matchMatrixWithOutOfRangeDimensions,
+     "matrix row and column counts must be between 1 and 4 inclusive",
+     nullptr,
+     _isInterfaceBlockVaryingStage},
+};
+
+struct VaryingTypeValidationContext
+{
+    ASTBuilder* astBuilder;
+    DiagnosticSink* sink;
+    Name* entryPointName;
+    SourceLoc loc;
+    const char* direction;
+    const char* context;
+    ArrayView<CodeGenTarget> targets;
+    Stage stage;
+    HashSet<Type*> seenTypes;
+    UInt recursionDepth = 0;
+    bool reportedNestingLimit = false;
+};
+
+// Recursively walks a type and checks it against the varying type rules.
+// Returns true if any error was found.
+static bool validateVaryingType(VaryingTypeValidationContext& ctx, Type* type)
+{
+    if (!type)
+        return false;
+
+    if (as<ErrorType>(type))
+        return false;
+
+    // Guard against deeply / infinitely nested generic struct types. The
+    // `seenTypes` set catches self-referential types that reuse the same
+    // `Type*` pointer, but generic instantiations such as
+    // `struct LoopField<each T> { LoopField<T, int> next; }` produce a fresh
+    // `Type*` at every level and would otherwise recurse unboundedly.
+    if (ctx.recursionDepth >= kMaxTypeNestingDepth)
+    {
+        if (!ctx.reportedNestingLimit)
+        {
+            ctx.reportedNestingLimit = true;
+            Diagnostics::MaximumTypeNestingLevelExceeded diag = {};
+            diag.location = ctx.loc;
+            ctx.sink->diagnose(diag);
+        }
+        return true;
+    }
+    struct DepthGuard
+    {
+        UInt& depth;
+        DepthGuard(UInt& d)
+            : depth(d)
+        {
+            ++depth;
+        }
+        ~DepthGuard() { --depth; }
+    } depthGuard(ctx.recursionDepth);
+
+    // Unwrap ModifiedType
+    if (auto modType = as<ModifiedType>(type))
+        return validateVaryingType(ctx, modType->getBase());
+
+    for (const auto& rule : kEntryPointVaryingTypeRules)
+    {
+        if (!rule.matches(type))
+            continue;
+
+        // A rule may scope itself to a subset of stages (e.g. only
+        // interface-block stages). If so, skip when the entry point's stage
+        // is outside that set.
+        if (rule.stagePredicate && !rule.stagePredicate(ctx.stage))
+            continue;
+
+        if (rule.targetPredicate)
+        {
+            bool anyTargetMatches = false;
+            String matchedTargetName;
+            for (auto target : ctx.targets)
+            {
+                if (rule.targetPredicate(target))
+                {
+                    anyTargetMatches = true;
+                    matchedTargetName =
+                        TypeTextUtil::getCompileTargetName(SlangCompileTarget(target));
+                    break;
+                }
+            }
+            if (!anyTargetMatches)
+                continue;
+
+            ctx.sink->diagnose(Diagnostics::InvalidEntryPointVaryingTypeForTarget{
+                .type = type,
+                .direction = ctx.direction,
+                .context = ctx.context,
+                .entryPoint = ctx.entryPointName,
+                .target = matchedTargetName,
+                .reason = rule.reason,
+                .location = ctx.loc});
+        }
+        else
+        {
+            ctx.sink->diagnose(Diagnostics::InvalidEntryPointVaryingType{
+                .type = type,
+                .direction = ctx.direction,
+                .context = ctx.context,
+                .entryPoint = ctx.entryPointName,
+                .reason = rule.reason,
+                .location = ctx.loc});
+        }
+        return true;
+    }
+
+    // Recurse into array element type.
+    // Note: `ArrayExpressionType` inherits from `DeclRefType` (its decl is the
+    // builtin `Array` struct), so this check must come before the struct-field
+    // recursion below to avoid iterating the internal fields of `Array`.
+    if (auto arrayType = as<ArrayExpressionType>(type))
+        return validateVaryingType(ctx, arrayType->getElementType());
+
+    // Recurse through geometry-shader stream output wrappers
+    // (`PointStream`/`LineStream`/`TriangleStream<T>`) and mesh-shader output
+    // wrappers (`Vertices`/`Indices`/`Primitives<T>`). Like arrays, these are
+    // `DeclRefType`s whose decl is an empty `struct`, so without an explicit
+    // unwrap the struct-field recursion below would walk zero fields and miss
+    // an invalid inner varying type such as `TriangleStream<BadStruct>`.
+    if (auto streamType = as<HLSLStreamOutputType>(type))
+        return validateVaryingType(ctx, streamType->getElementType());
+    if (auto meshOutputType = as<MeshOutputType>(type))
+        return validateVaryingType(ctx, meshOutputType->getElementType());
+
+    // Recurse into struct fields
+    if (auto declRefType = as<DeclRefType>(type))
+    {
+        auto structDeclRef = declRefType->getDeclRef().as<StructDecl>();
+        if (structDeclRef)
+        {
+            if (ctx.seenTypes.contains(type))
+                return false;
+            ctx.seenTypes.add(type);
+
+            bool foundError = false;
+            // Iterate the struct's fields through the DeclRef so that generic
+            // type parameter substitutions are applied to each field's type.
+            // Without this, `struct Wrapper<T> { T x; }` used as
+            // `Wrapper<DifferentialPair<float>>` would not be caught.
+            for (auto fieldDeclRef :
+                 getFields(ctx.astBuilder, structDeclRef, MemberFilterStyle::Instance))
+            {
+                auto fieldType = getType(ctx.astBuilder, fieldDeclRef);
+                if (validateVaryingType(ctx, fieldType))
+                    foundError = true;
+            }
+            return foundError;
+        }
+    }
+
+    // We deliberately do not recurse into vector/matrix element types: the
+    // type system requires those element types to be scalar, and any scalar
+    // element restriction (e.g. `vector<bool>`, `matrix<uint64_t, ...>`) is
+    // expressed as a whole-type rule in `kEntryPointVaryingTypeRules` above.
+
+    return false;
 }
 
 bool doStructFieldsHaveSemanticImpl(Type* type, HashSet<Type*>& seenTypes)
@@ -394,20 +1183,34 @@ void validateEntryPoint(EntryPoint* entryPoint, DiagnosticSink* sink)
 
         if (hasResourceOrUnsizedTypes)
         {
-            sink->diagnose(
-                entryPointFuncDecl,
-                Diagnostics::entryPointCannotReturnResourceType,
-                entryPointName,
-                returnType);
+            sink->diagnose(Diagnostics::EntryPointCannotReturnResourceType{
+                .entryPoint = entryPointName,
+                .returnType = returnType,
+                .location = entryPointFuncDecl->loc});
+        }
+
+        if (as<ArrayExpressionType>(returnType))
+        {
+            sink->diagnose(Diagnostics::EntryPointCannotReturnArrayType{
+                .entryPoint = entryPointName,
+                .returnType = returnType,
+                .location = entryPointFuncDecl->loc});
         }
     }
+
+    // NOTE: Varying-parameter / return-type validation happens *after* the
+    // auto-uniform classification below, so that parameters auto-marked
+    // `uniform` on non-varying stages (e.g. `compute`) are skipped rather
+    // than being diagnosed as if they were varyings.
 
     // Every entry point needs to have a stage specified either via
     // command-line/API options, or via an explicit `[shader("...")]` attribute.
     //
     if (stage == Stage::Unknown)
     {
-        sink->diagnose(entryPointFuncDecl, Diagnostics::entryPointHasNoStage, entryPointName);
+        sink->diagnose(Diagnostics::EntryPointHasNoStage{
+            .entryPoint = entryPointName->text,
+            .location = entryPointFuncDecl->loc});
     }
 
     if (stage == Stage::Hull)
@@ -421,7 +1224,9 @@ void validateEntryPoint(EntryPoint* entryPoint, DiagnosticSink* sink)
         {
             if (attr->args.getCount() != 1)
             {
-                sink->diagnose(attr, Diagnostics::badlyDefinedPatchConstantFunc, entryPointName);
+                sink->diagnose(Diagnostics::BadlyDefinedPatchConstantFunc{
+                    .entryPointName = entryPointName,
+                    .location = attr});
                 return;
             }
 
@@ -430,7 +1235,9 @@ void validateEntryPoint(EntryPoint* entryPoint, DiagnosticSink* sink)
 
             if (!stringLit)
             {
-                sink->diagnose(expr, Diagnostics::badlyDefinedPatchConstantFunc, entryPointName);
+                sink->diagnose(Diagnostics::BadlyDefinedPatchConstantFunc{
+                    .entryPointName = entryPointName,
+                    .location = attr});
                 return;
             }
 
@@ -451,15 +1258,38 @@ void validateEntryPoint(EntryPoint* entryPoint, DiagnosticSink* sink)
             DeclRef<FuncDecl> patchConstantFuncDeclRef = findFunctionDeclByName(module, name, sink);
             if (!patchConstantFuncDeclRef)
             {
-                sink->diagnose(
-                    expr,
-                    Diagnostics::attributeFunctionNotFound,
-                    name,
-                    "patchconstantfunc");
+                sink->diagnose(Diagnostics::AttributeFunctionNotFound{
+                    .funcName = name,
+                    .attrName = "patchconstantfunc",
+                    .location = expr});
                 return;
             }
 
             attr->patchConstantFuncDecl = patchConstantFuncDeclRef.getDecl();
+        }
+    }
+    else if (stage == Stage::Geometry)
+    {
+        bool hasOutputStream = false;
+        for (const auto& param : entryPointFuncDecl->getParameters())
+        {
+            if (as<HLSLStreamOutputType>(param->getType()))
+            {
+                hasOutputStream = true;
+                break;
+            }
+        }
+        if (!hasOutputStream)
+        {
+            sink->diagnose(Diagnostics::GeometryShaderMissingOutputStream{
+                .entryPoint = entryPointName,
+                .location = entryPointFuncDecl->loc});
+        }
+        if (!entryPointFuncDecl->findModifier<MaxVertexCountAttribute>())
+        {
+            sink->diagnose(Diagnostics::GeometryShaderMissingMaxVertexCount{
+                .entryPoint = entryPointName,
+                .location = entryPointFuncDecl->loc});
         }
     }
     else if (stage == Stage::Compute)
@@ -478,15 +1308,135 @@ void validateEntryPoint(EntryPoint* entryPoint, DiagnosticSink* sink)
 
                     if (!isValidThreadDispatchIDType(paramType))
                     {
-                        String typeString = paramType->toString();
-                        sink->diagnose(
-                            param->loc,
-                            Diagnostics::invalidDispatchThreadIDType,
-                            typeString);
+                        sink->diagnose(Diagnostics::InvalidDispatchThreadIdType{
+                            .type = paramType->toString(),
+                            .location = param->loc});
                         return;
                     }
                 }
             }
+        }
+    }
+
+    // Validate system value semantics against SemanticDecl definitions in core module
+    {
+        SharedSemanticsContext shared(linkage, module, sink);
+        SemanticsVisitor visitor(&shared);
+
+        // Use the session's coreLanguageScope which contains the SemanticDecl definitions
+        // The module's own scope may not include the core module (e.g., when loading from
+        // serialized module)
+        if (auto scope = linkage->getSessionImpl()->coreLanguageScope)
+        {
+            // Validate system value semantics for entry point parameters
+            for (const auto& param : entryPointFuncDecl->getParameters())
+            {
+                if (param->hasModifier<InOutModifier>())
+                {
+                    validateSystemValueSemantic(
+                        &visitor,
+                        sink,
+                        param,
+                        stage,
+                        SemanticDirection::Input,
+                        scope);
+                    validateSystemValueSemantic(
+                        &visitor,
+                        sink,
+                        param,
+                        stage,
+                        SemanticDirection::Output,
+                        scope);
+                }
+                else if (param->hasModifier<OutModifier>())
+                {
+                    validateSystemValueSemantic(
+                        &visitor,
+                        sink,
+                        param,
+                        stage,
+                        SemanticDirection::Output,
+                        scope);
+                }
+                else
+                {
+                    validateSystemValueSemantic(
+                        &visitor,
+                        sink,
+                        param,
+                        stage,
+                        SemanticDirection::Input,
+                        scope);
+                }
+            }
+
+            // Validate the return type semantic
+            validateSystemValueSemantic(
+                &visitor,
+                sink,
+                entryPointFuncDecl,
+                stage,
+                SemanticDirection::Output,
+                scope);
+        }
+    }
+
+    // For compute, mesh, and amplification (task) entry points using GLSL
+    // syntax, the thread group size is specified via layout(local_size_x = N)
+    // on a sibling EmptyDecl rather than via [numthreads] on the entry point
+    // itself. GLSL allows each axis to be specified in a separate declaration,
+    // so we merge all GLSLLayoutLocalSizeAttribute values into a single
+    // NumThreadsAttribute.
+    if ((stage == Stage::Compute || stage == Stage::Mesh || stage == Stage::Amplification) &&
+        !entryPointFuncDecl->findModifier<NumThreadsAttribute>())
+    {
+        auto parentDecl = entryPointFuncDecl->parentDecl;
+        if (parentDecl)
+        {
+            NumThreadsAttribute* numThreads = nullptr;
+            for (auto emptyDecl : parentDecl->getMembersOfType<EmptyDecl>())
+            {
+                auto glslAttr = emptyDecl->findModifier<GLSLLayoutLocalSizeAttribute>();
+                if (!glslAttr)
+                    continue;
+
+                if (!numThreads)
+                {
+                    numThreads = getCurrentASTBuilder()->create<NumThreadsAttribute>();
+                    for (int i = 0; i < 3; ++i)
+                    {
+                        numThreads->extents[i] = glslAttr->extents[i];
+                        numThreads->specConstExtents[i] = glslAttr->specConstExtents[i];
+                    }
+                }
+                else
+                {
+                    // Merge: for each axis, take the non-default value.
+                    // GLSL defaults unspecified axes to 1.
+                    for (int i = 0; i < 3; ++i)
+                    {
+                        if (glslAttr->specConstExtents[i])
+                        {
+                            numThreads->extents[i] = nullptr;
+                            numThreads->specConstExtents[i] = glslAttr->specConstExtents[i];
+                        }
+                        else if (glslAttr->extents[i])
+                        {
+                            if (auto cint = as<ConstantIntVal>(glslAttr->extents[i]))
+                            {
+                                if (cint->getValue() != 1)
+                                    numThreads->extents[i] = glslAttr->extents[i];
+                            }
+                            else
+                            {
+                                numThreads->extents[i] = glslAttr->extents[i];
+                            }
+                        }
+                    }
+                }
+            }
+            if (numThreads)
+                addModifier(entryPointFuncDecl, numThreads);
         }
     }
 
@@ -549,9 +1499,67 @@ void validateEntryPoint(EntryPoint* entryPoint, DiagnosticSink* sink)
         if (shouldWarnOnNonUniformParam)
         {
             sink->diagnose(
-                param,
-                Diagnostics::nonUniformEntryPointParameterTreatedAsUniform,
-                param->getName());
+                Diagnostics::NonUniformEntryPointParameterTreatedAsUniform{.param = param});
+        }
+    }
+
+    // Validate that varying parameter/return types are legal. Runs after the
+    // auto-uniform classification above so that parameters that will end up
+    // being treated as uniform on non-varying stages are not diagnosed.
+    {
+        List<CodeGenTarget> targets;
+        for (auto target : linkage->targets)
+            targets.add(target->getTarget());
+
+        auto astBuilder = linkage->getASTBuilder();
+
+        // Validate return type as varying output
+        if (returnType)
+        {
+            VaryingTypeValidationContext ctx;
+            ctx.astBuilder = astBuilder;
+            ctx.sink = sink;
+            ctx.entryPointName = entryPointName;
+            ctx.loc = entryPointFuncDecl->loc;
+            ctx.direction = "output";
+            ctx.context = "return type";
+            ctx.targets = targets.getArrayView();
+            ctx.stage = stage;
+            validateVaryingType(ctx, returnType);
+        }
+
+        // Validate each parameter that would be treated as varying. Parameters
+        // that were auto-marked uniform by the loop above are skipped here.
+        for (const auto& param : entryPointFuncDecl->getParameters())
+        {
+            if (param->hasModifier<HLSLUniformModifier>())
+                continue;
+            if (isUniformParameterType(param->getType()))
+                continue;
+
+            VaryingTypeValidationContext ctx;
+            ctx.astBuilder = astBuilder;
+            ctx.sink = sink;
+            ctx.entryPointName = entryPointName;
+            ctx.loc = param->loc;
+            // Note: `InOutModifier` inherits from `OutModifier`, so it must be
+            // checked first to avoid mislabeling `inout` parameters as "output".
+            ctx.direction = param->hasModifier<InOutModifier>() ? "input/output"
+                            : param->hasModifier<OutModifier>() ? "output"
+                            : param->hasModifier<RefModifier>() ? "input/output"
+                                                                : "input";
+
+            StringBuilder contextSb;
+            auto paramName = param->getName();
+            if (paramName)
+                contextSb << "parameter '" << paramName->text << "'";
+            else
+                contextSb << "parameter";
+            String contextStr = contextSb.produceString();
+            ctx.context = contextStr.getBuffer();
+            ctx.targets = targets.getArrayView();
+            ctx.stage = stage;
+            validateVaryingType(ctx, param->getType());
         }
     }
 
@@ -567,35 +1575,31 @@ void validateEntryPoint(EntryPoint* entryPoint, DiagnosticSink* sink)
     {
         if (param->findModifier<GLSLBindingAttribute>())
         {
-            sink->diagnose(
-                param,
-                Diagnostics::unhandledModOnEntryPointParameter,
-                "attribute '[[vk::binding(...)]]'",
-                param->getName());
+            sink->diagnose(Diagnostics::UnhandledModOnEntryPointParameter{
+                .modifier = "attribute '[[vk::binding(...)]]'",
+                .param = param->getName(),
+                .location = param->loc});
         }
         if (param->findModifier<PushConstantAttribute>())
         {
-            sink->diagnose(
-                param,
-                Diagnostics::unhandledModOnEntryPointParameter,
-                "attribute '[[vk::push_constant]]'",
-                param->getName());
+            sink->diagnose(Diagnostics::UnhandledModOnEntryPointParameter{
+                .modifier = "attribute '[[vk::push_constant]]'",
+                .param = param->getName(),
+                .location = param->loc});
         }
         if (param->findModifier<HLSLRegisterSemantic>())
         {
-            sink->diagnose(
-                param,
-                Diagnostics::unhandledModOnEntryPointParameter,
-                "keyword 'register'",
-                param->getName());
+            sink->diagnose(Diagnostics::UnhandledModOnEntryPointParameter{
+                .modifier = "keyword 'register'",
+                .param = param->getName(),
+                .location = param->loc});
         }
         if (param->findModifier<HLSLPackOffsetSemantic>())
         {
-            sink->diagnose(
-                param,
-                Diagnostics::unhandledModOnEntryPointParameter,
-                "keyword 'packoffset'",
-                param->getName());
+            sink->diagnose(Diagnostics::UnhandledModOnEntryPointParameter{
+                .modifier = "keyword 'packoffset'",
+                .param = param->getName(),
+                .location = param->loc});
         }
     }
 
@@ -616,11 +1620,10 @@ void validateEntryPoint(EntryPoint* entryPoint, DiagnosticSink* sink)
                 sink,
                 linkage->m_optionSet,
                 DiagnosticCategory::Capability,
-                entryPointFuncDecl,
-                Diagnostics::entryPointUsesUnavailableCapability,
-                entryPointFuncDecl,
-                compileTarget,
-                stageTarget);
+                Diagnostics::EntryPointUsesUnavailableCapability{
+                    .stage = capabilityNameToString((CapabilityName)stageTarget),
+                    .target = capabilityNameToString((CapabilityName)compileTarget),
+                    .decl = entryPointFuncDecl});
 
             // Find out what is incompatible (ancestor missing a super set of 'target+stage')
             CapabilitySet failedSet({(CapabilityName)compileTarget, (CapabilityName)stageTarget});
@@ -684,16 +1687,27 @@ void validateEntryPoint(EntryPoint* entryPoint, DiagnosticSink* sink)
                             (*targetCapSet));
                     }
                 }
+                StringBuilder entryPointNameSb;
+                printDiagnosticArg(entryPointNameSb, entryPointFuncDecl);
+                auto atoms = addedAtoms.getElements<CapabilityAtom>();
+                StringBuilder capsSb;
+                printDiagnosticArg(capsSb, atoms);
                 maybeDiagnoseWarningOrError(
                     sink,
                     target->getOptionSet(),
                     DiagnosticCategory::Capability,
-                    entryPointFuncDecl->loc,
-                    Diagnostics::profileImplicitlyUpgraded,
-                    Diagnostics::profileImplicitlyUpgradedRestrictive,
-                    entryPointFuncDecl,
-                    target->getOptionSet().getProfile().getName(),
-                    addedAtoms.getElements<CapabilityAtom>());
+                    Diagnostics::ProfileImplicitlyUpgraded{
+                        .entryPoint = entryPointNameSb.produceString(),
+                        .profile = target->getOptionSet().getProfile().getName(),
+                        .capabilities = capsSb.produceString(),
+                        .location = entryPointFuncDecl->loc,
+                    },
+                    Diagnostics::ProfileImplicitlyUpgradedRestrictive{
+                        .entryPoint = entryPointNameSb.produceString(),
+                        .profile = target->getOptionSet().getProfile().getName(),
+                        .capabilities = capsSb.produceString(),
+                        .location = entryPointFuncDecl->loc,
+                    });
             }
         }
     }
@@ -724,11 +1738,11 @@ bool resolveStageOfProfileWithEntryPoint(
                     sink,
                     optionSet,
                     DiagnosticCategory::Capability,
-                    entryPointAttr,
-                    Diagnostics::entryPointAndProfileAreIncompatible,
-                    entryPointFuncDecl,
-                    entryPointStage,
-                    targetProfile.getName());
+                    Diagnostics::EntryPointAndProfileAreIncompatible{
+                        .decl = entryPointFuncDecl,
+                        .stage = getStageName(entryPointStage),
+                        .profile = targetProfile.getName(),
+                        .location = entryPointAttr->loc});
         }
         if (entryPointProfileStage == Stage::Unknown)
             entryPointProfile = Profile(entryPointStage);
@@ -738,11 +1752,11 @@ bool resolveStageOfProfileWithEntryPoint(
                 sink,
                 optionSet,
                 DiagnosticCategory::Capability,
-                entryPointFuncDecl,
-                Diagnostics::specifiedStageDoesntMatchAttribute,
-                entryPointFuncDecl->getName(),
-                entryPointProfileStage,
-                entryPointStage);
+                Diagnostics::SpecifiedStageDoesntMatchAttribute{
+                    .entryPoint = entryPointFuncDecl->getName()->text,
+                    .compiledStage = getStageName(entryPointProfileStage),
+                    .attributeStage = getStageName(entryPointStage),
+                    .location = entryPointFuncDecl->loc});
         entryPointProfile.additionalCapabilities.add(CapabilitySet{entryPointAttr->capabilitySet});
         return true;
     }
@@ -870,7 +1884,7 @@ Type* getParamTypeWithModeWrapper(
     }
 }
 
-void Module::_collectShaderParams()
+void Module::_collectShaderParams(DiagnosticSink* sink)
 {
     // We are going to walk the global declarations in the body of the
     // module, and use those to build up our lists of:
@@ -930,11 +1944,15 @@ void Module::_collectShaderParams()
                 // can assocaite specialization arguments supplied later
                 // with the correct parameter.
                 //
-                _collectExistentialSpecializationParamsForShaderParam(
-                    getLinkage()->getASTBuilder(),
-                    shaderParamInfo,
-                    m_specializationParams,
-                    makeDeclRef(globalVar));
+                if (!_collectExistentialSpecializationParamsForShaderParam(
+                        getLinkage()->getASTBuilder(),
+                        shaderParamInfo,
+                        m_specializationParams,
+                        makeDeclRef(globalVar),
+                        sink))
+                {
+                    return;
+                }
 
                 m_shaderParams.add(shaderParamInfo);
             }
@@ -1144,33 +2162,27 @@ RefPtr<ComponentType> createUnspecializedGlobalComponentType(FrontEndCompileRequ
         if (!parseTypeConformanceArgString(stringValue, typeName, interfaceName, sequentialId))
         {
             compileRequest->getSink()->diagnose(
-                SourceLoc(),
-                Diagnostics::invalidTypeConformanceOptionString,
-                stringValue);
+                Diagnostics::InvalidTypeConformanceOptionString{.option = stringValue});
             continue;
         }
-        auto concreteType = globalComponentType->getTypeFromString(
-            String(typeName).getBuffer(),
-            compileRequest->getSink());
-        if (!concreteType)
+        DiagnosticSink typeLookupSink(linkage->getSourceManager(), nullptr);
+        auto concreteType =
+            globalComponentType->getTypeFromString(String(typeName).getBuffer(), &typeLookupSink);
+        if (!concreteType || as<ErrorType>(concreteType))
         {
-            compileRequest->getSink()->diagnose(
-                SourceLoc(),
-                Diagnostics::invalidTypeConformanceOptionNoType,
-                stringValue,
-                typeName);
+            compileRequest->getSink()->diagnose(Diagnostics::InvalidTypeConformanceOptionNoType{
+                .option = stringValue,
+                .typeName = typeName});
             continue;
         }
         auto interfaceType = globalComponentType->getTypeFromString(
             String(interfaceName).getBuffer(),
-            compileRequest->getSink());
-        if (!interfaceType)
+            &typeLookupSink);
+        if (!interfaceType || as<ErrorType>(interfaceType))
         {
-            compileRequest->getSink()->diagnose(
-                SourceLoc(),
-                Diagnostics::invalidTypeConformanceOptionNoType,
-                stringValue,
-                interfaceName);
+            compileRequest->getSink()->diagnose(Diagnostics::InvalidTypeConformanceOptionNoType{
+                .option = stringValue,
+                .typeName = interfaceName});
             continue;
         }
         ComPtr<slang::ITypeConformance> conformanceComponent;
@@ -1187,9 +2199,7 @@ RefPtr<ComponentType> createUnspecializedGlobalComponentType(FrontEndCompileRequ
             // we should report the diagnostics that were generated.
             //
             compileRequest->getSink()->diagnose(
-                SourceLoc(),
-                Diagnostics::cannotCreateTypeConformance,
-                stringValue);
+                Diagnostics::CannotCreateTypeConformance{.conformance = stringValue});
             if (diagnostics)
             {
                 compileRequest->getSink()->diagnoseRaw(
@@ -1355,11 +2365,9 @@ RefPtr<ComponentType::SpecializationInfo> Module::_validateSpecializationArgsImp
 {
     if (argCount < getSpecializationParamCount())
     {
-        sink->diagnose(
-            SourceLoc(),
-            Diagnostics::mismatchSpecializationArguments,
-            getSpecializationParamCount(),
-            argCount);
+        sink->diagnose(Diagnostics::MismatchSpecializationArguments{
+            .expected = (int64_t)getSpecializationParamCount(),
+            .provided = (int64_t)argCount});
         return nullptr;
     }
     outConsumedArgCount = getSpecializationParamCount();
@@ -1386,10 +2394,9 @@ RefPtr<ComponentType::SpecializationInfo> Module::_validateSpecializationArgsImp
                 Type* argType = as<Type>(arg.val);
                 if (!argType)
                 {
-                    sink->diagnose(
-                        param.loc,
-                        Diagnostics::expectedTypeForSpecializationArg,
-                        genericTypeParamDecl);
+                    sink->diagnose(Diagnostics::ExpectedTypeForSpecializationArg{
+                        .param = genericTypeParamDecl->getName()->text,
+                        .location = param.loc});
                     argType = getLinkage()->getASTBuilder()->getErrorType();
                 }
 
@@ -1422,10 +2429,9 @@ RefPtr<ComponentType::SpecializationInfo> Module::_validateSpecializationArgsImp
                         if (argGenericParamDeclRef.getDecl() == genericTypeParamDecl)
                         {
                             // We are trying to specialize a generic parameter using itself.
-                            sink->diagnose(
-                                genericTypeParamDecl,
-                                Diagnostics::cannotSpecializeGlobalGenericToItself,
-                                genericTypeParamDecl->getName());
+                            sink->diagnose(Diagnostics::CannotSpecializeGlobalGenericToItself{
+                                .param = genericTypeParamDecl->getName(),
+                                .location = genericTypeParamDecl->loc});
                             continue;
                         }
                         else
@@ -1433,10 +2439,10 @@ RefPtr<ComponentType::SpecializationInfo> Module::_validateSpecializationArgsImp
                             // We are trying to specialize a generic parameter using a *different*
                             // global generic type parameter.
                             sink->diagnose(
-                                genericTypeParamDecl,
-                                Diagnostics::cannotSpecializeGlobalGenericToAnotherGenericParam,
-                                genericTypeParamDecl->getName(),
-                                argGenericParamDeclRef.getName());
+                                Diagnostics::CannotSpecializeGlobalGenericToAnotherGenericParam{
+                                    .param = genericTypeParamDecl->getName(),
+                                    .otherParam = argGenericParamDeclRef.getName(),
+                                    .location = genericTypeParamDecl->loc});
                             continue;
                         }
                     }
@@ -1466,11 +2472,11 @@ RefPtr<ComponentType::SpecializationInfo> Module::_validateSpecializationArgsImp
                         // If no witness was found, then we will be unable to satisfy
                         // the conformances required.
                         sink->diagnose(
-                            genericTypeParamDecl,
-                            Diagnostics::typeArgumentForGenericParameterDoesNotConformToInterface,
-                            argType,
-                            genericTypeParamDecl->nameAndLoc.name,
-                            interfaceType);
+                            Diagnostics::TypeArgumentForGenericParameterDoesNotConformToInterface{
+                                .typeArg = argType,
+                                .param = genericTypeParamDecl->nameAndLoc.name,
+                                .interface = interfaceType,
+                                .location = genericTypeParamDecl->loc});
                     }
 
                     ModuleSpecializationInfo::GenericArgInfo constraintArgInfo;
@@ -1489,10 +2495,9 @@ RefPtr<ComponentType::SpecializationInfo> Module::_validateSpecializationArgsImp
                 Type* argType = as<Type>(arg.val);
                 if (!argType)
                 {
-                    sink->diagnose(
-                        param.loc,
-                        Diagnostics::expectedTypeForSpecializationArg,
-                        interfaceType);
+                    sink->diagnose(Diagnostics::ExpectedTypeForSpecializationArg{
+                        .param = interfaceType ? interfaceType->toString() : "<unknown type>",
+                        .location = param.loc});
                     argType = getLinkage()->getASTBuilder()->getErrorType();
                 }
 
@@ -1501,11 +2506,9 @@ RefPtr<ComponentType::SpecializationInfo> Module::_validateSpecializationArgsImp
                 {
                     // If no witness was found, then we will be unable to satisfy
                     // the conformances required.
-                    sink->diagnose(
-                        SourceLoc(),
-                        Diagnostics::typeArgumentDoesNotConformToInterface,
-                        argType,
-                        interfaceType);
+                    sink->diagnose(Diagnostics::TypeArgumentDoesNotConformToInterface{
+                        .typeArg = argType,
+                        .interface = interfaceType});
                 }
 
                 ExpandedSpecializationArg expandedArg;
@@ -1527,11 +2530,10 @@ RefPtr<ComponentType::SpecializationInfo> Module::_validateSpecializationArgsImp
                 IntVal* intVal = as<IntVal>(arg.val);
                 if (!intVal)
                 {
-                    sink->diagnose(
-                        param.loc,
-                        Diagnostics::expectedValueOfTypeForSpecializationArg,
-                        paramDecl->getType(),
-                        paramDecl);
+                    sink->diagnose(Diagnostics::ExpectedValueOfTypeForSpecializationArg{
+                        .type = paramDecl->getType(),
+                        .param = paramDecl->getName()->text,
+                        .location = param.loc});
                     intVal =
                         getLinkage()->getASTBuilder()->getIntVal(m_astBuilder->getIntType(), 0);
                 }
@@ -1610,6 +2612,8 @@ RefPtr<ComponentType::SpecializationInfo> EntryPoint::_validateSpecializationArg
 
         bool isVariadic =
             (genericDeclRef.getDecl()->getMembersOfType<GenericTypePackParamDecl>().getCount() !=
+             0) ||
+            (genericDeclRef.getDecl()->getMembersOfType<GenericValuePackParamDecl>().getCount() !=
              0);
 
         // If function is variadic generic, it will consume all the provided arguments.
@@ -1618,11 +2622,10 @@ RefPtr<ComponentType::SpecializationInfo> EntryPoint::_validateSpecializationArg
 
         if (genericArgCount < 0)
         {
-            sink->diagnose(
-                SourceLoc(),
-                Diagnostics::mismatchSpecializationArguments,
-                genericSpecializationParamCount + existentialSpecializationParamCount,
-                argCount);
+            sink->diagnose(Diagnostics::MismatchSpecializationArguments{
+                .expected = (int64_t)(genericSpecializationParamCount +
+                                      existentialSpecializationParamCount),
+                .provided = (int64_t)argCount});
             return nullptr;
         }
 
@@ -1662,7 +2665,7 @@ RefPtr<ComponentType::SpecializationInfo> EntryPoint::_validateSpecializationArg
             }
             else
             {
-                sink->diagnose(SourceLoc(), Diagnostics::invalidFormOfSpecializationArg, ii + 1);
+                sink->diagnose(Diagnostics::InvalidFormOfSpecializationArg{.index = ii + 1});
             }
         }
         auto genAppExpr = astBuilder->create<GenericAppExpr>();
@@ -1710,11 +2713,10 @@ RefPtr<ComponentType::SpecializationInfo> EntryPoint::_validateSpecializationArg
 
     if (argCount < existentialSpecializationParamCount)
     {
-        sink->diagnose(
-            SourceLoc(),
-            Diagnostics::mismatchSpecializationArguments,
-            genericSpecializationParamCount + existentialSpecializationParamCount,
-            argCount);
+        sink->diagnose(Diagnostics::MismatchSpecializationArguments{
+            .expected =
+                (int64_t)(genericSpecializationParamCount + existentialSpecializationParamCount),
+            .provided = (int64_t)argCount});
         return nullptr;
     }
 
@@ -1733,11 +2735,9 @@ RefPtr<ComponentType::SpecializationInfo> EntryPoint::_validateSpecializationArg
         {
             // If no witness was found, then we will be unable to satisfy
             // the conformances required.
-            sink->diagnose(
-                SourceLoc(),
-                Diagnostics::typeArgumentDoesNotConformToInterface,
-                argType,
-                paramType);
+            sink->diagnose(Diagnostics::TypeArgumentDoesNotConformToInterface{
+                .typeArg = argType,
+                .interface = paramType});
             continue;
         }
 
@@ -1853,10 +2853,7 @@ void parseSpecializationArgStrings(
 
         if (!argExpr)
         {
-            sink->diagnose(
-                SourceLoc(),
-                Diagnostics::internalCompilerError,
-                "couldn't parse specialization argument");
+            sink->diagnose(Diagnostics::InternalCompilerError{});
             return;
         }
 
@@ -1879,13 +2876,20 @@ Type* Linkage::specializeType(
     SemanticsVisitor visitor(&sharedSemanticsContext);
 
     SpecializationParams specializationParams;
-    _collectExistentialSpecializationParamsRec(
-        getASTBuilder(),
-        specializationParams,
-        unspecializedType,
-        SourceLoc());
+    if (!_collectExistentialSpecializationParamsRec(
+            getASTBuilder(),
+            specializationParams,
+            unspecializedType,
+            SourceLoc(),
+            sink,
+            0))
+    {
+        return nullptr;
+    }
 
     SLANG_ASSERT(specializationParams.getCount() == argCount);
+    if (specializationParams.getCount() != argCount)
+        return nullptr;
 
     ExpandedSpecializationArgs specializationArgs;
     for (Int aa = 0; aa < argCount; ++aa)
@@ -1929,11 +2933,9 @@ static RefPtr<ComponentType> _createSpecializedProgramImpl(
     auto specializationParamCount = unspecializedProgram->getSpecializationParamCount();
     if (specializationArgCount != specializationParamCount)
     {
-        sink->diagnose(
-            SourceLoc(),
-            Diagnostics::mismatchSpecializationArguments,
-            specializationParamCount,
-            specializationArgCount);
+        sink->diagnose(Diagnostics::MismatchSpecializationArguments{
+            .expected = (int64_t)specializationParamCount,
+            .provided = (int64_t)specializationArgCount});
         return nullptr;
     }
 
@@ -2173,5 +3175,22 @@ RefPtr<ComponentType> createSpecializedGlobalAndEntryPointsComponentType(
     return composed;
 }
 
+SourceLoc _getTypeNestingDiagnosticPosForDecl(Decl* decl)
+{
+    if (auto varDecl = as<VarDeclBase>(decl))
+    {
+        auto loc = getDiagnosticPos(varDecl->type);
+        if (loc.isValid())
+            return loc;
+    }
+    else if (auto callableDecl = as<CallableDecl>(decl))
+    {
+        auto loc = getDiagnosticPos(callableDecl->returnType);
+        if (loc.isValid())
+            return loc;
+    }
+
+    return getDiagnosticPos(decl);
+}
 
 } // namespace Slang

@@ -8,7 +8,7 @@
 #include "slang-ir-layout.h"
 #include "slang-ir-util.h"
 #include "slang-legalize-types.h"
-#include "slang-mangled-lexer.h"
+#include "slang-rich-diagnostics.h"
 #include "slang/slang-ir.h"
 
 #include <assert.h>
@@ -577,6 +577,7 @@ void GLSLSourceEmitter::_emitGLSLParameterGroup(
             case kIROp_Std140BufferLayoutType:
                 m_writer->emit("std140");
                 break;
+            case kIROp_DefaultPushConstantBufferLayoutType:
             case kIROp_Std430BufferLayoutType:
                 m_writer->emit("std430");
                 break;
@@ -655,12 +656,10 @@ void GLSLSourceEmitter::_emitGLSLImageFormatModifier(IRInst* var, IRTextureType*
         const auto formatInfo = getImageFormatInfo(format);
         if (!isImageFormatSupportedByGLSL(format))
         {
-            getSink()->diagnose(
-                SourceLoc(),
-                Diagnostics::imageFormatUnsupportedByBackend,
-                formatInfo.name,
-                "GLSL",
-                "unknown");
+            getSink()->diagnose(Diagnostics::ImageFormatUnsupportedByBackend{
+                .format = formatInfo.name,
+                .backend = "GLSL",
+                .replacement = "unknown"});
             format = ImageFormat::unknown;
         }
 
@@ -1062,6 +1061,11 @@ void GLSLSourceEmitter::_emitGLSLTextureOrTextureSamplerType(
     if (type->isArray())
     {
         m_writer->emit("Array");
+        if (type->GetBaseShape() == SLANG_TEXTURE_CUBE)
+        {
+            // samplerCubeArray requires GL_ARB_texture_cube_map_array on GLSL < 4.00
+            _requireGLSLExtension(UnownedStringSlice::fromLiteral("GL_ARB_texture_cube_map_array"));
+        }
     }
 
     // Note: we're adding 'Shadow' only for combined texture/sampler types. Plain texture
@@ -1386,6 +1390,7 @@ void GLSLSourceEmitter::emitSimpleValueImpl(IRInst* inst)
                 case BaseType::IntPtr:
                 case BaseType::Int64:
                     {
+                        _requireBaseType(BaseType::Int64);
                         m_writer->emitInt64(int64_t(litInst->value.intVal));
                         m_writer->emit("L");
                         return;
@@ -1395,6 +1400,7 @@ void GLSLSourceEmitter::emitSimpleValueImpl(IRInst* inst)
                     {
                         SLANG_COMPILE_TIME_ASSERT(
                             sizeof(litInst->value.intVal) >= sizeof(uint64_t));
+                        _requireBaseType(BaseType::UInt64);
                         m_writer->emitUInt64(uint64_t(litInst->value.intVal));
                         m_writer->emit("UL");
                         return;
@@ -2404,6 +2410,20 @@ bool GLSLSourceEmitter::tryEmitInstExprImpl(IRInst* inst, const EmitOpInfo& inOu
                     break;
                 }
                 break;
+            case BaseType::Double:
+                switch (fromType)
+                {
+                case BaseType::UInt64:
+                    m_writer->emit("uint64BitsToDouble");
+                    break;
+                case BaseType::Int64:
+                    m_writer->emit("int64BitsToDouble");
+                    break;
+                default:
+                    emitType(inst->getDataType());
+                    break;
+                }
+                break;
             case BaseType::Bool:
                 m_writer->emit("bool");
                 break;
@@ -2422,7 +2442,7 @@ bool GLSLSourceEmitter::tryEmitInstExprImpl(IRInst* inst, const EmitOpInfo& inOu
     case kIROp_Not:
         {
             IRInst* operand = inst->getOperand(0);
-            if (const auto vectorType = as<IRVectorType>(operand->getDataType()))
+            if (const auto vectorType = as<IRVectorType>(operand->getDataType()); vectorType)
             {
                 EmitOpInfo outerPrec = inOuterPrec;
                 bool needClose = false;
@@ -3467,7 +3487,17 @@ void GLSLSourceEmitter::emitSimpleTypeImpl(IRType* type)
         }
     case kIROp_HitObjectType:
         {
-            m_writer->emit("hitObjectNV");
+            // Emit appropriate HitObject type based on capability
+            // User must explicitly specify which extension to use
+            auto targetCaps = getTargetCaps();
+            if (targetCaps.implies(CapabilityAtom::_GL_NV_shader_invocation_reorder))
+            {
+                m_writer->emit("hitObjectNV");
+            }
+            else // if (targetCaps.implies(CapabilityAtom::_GL_EXT_shader_invocation_reorder))
+            {
+                m_writer->emit("hitObjectEXT");
+            }
             return;
         }
     case kIROp_TextureFootprintType:
@@ -3531,7 +3561,8 @@ void GLSLSourceEmitter::emitSimpleTypeImpl(IRType* type)
         _emitGLSLSubpassInputType(subpassType);
         return;
     }
-    else if (const auto structuredBufferType = as<IRHLSLStructuredBufferTypeBase>(type))
+    else if (const auto structuredBufferType = as<IRHLSLStructuredBufferTypeBase>(type);
+             structuredBufferType)
     {
         // TODO: We desugar global variables with structured-buffer type into GLSL
         // `buffer` declarations, but we don't currently handle structured-buffer types
@@ -3787,7 +3818,11 @@ void GLSLSourceEmitter::emitVarDecorationsImpl(IRInst* varDecl)
                 break;
             case kIROp_VulkanHitObjectAttributesDecoration:
                 prefix = toSlice("hitObjectAttribute");
-                postfix = toSlice("NV");
+                {
+                    auto targetCaps = getTargetCaps();
+                    if (targetCaps.implies(CapabilityAtom::_GL_NV_shader_invocation_reorder))
+                        postfix = toSlice("NV");
+                }
                 locationValue = getIntVal(decoration->getOperand(0));
                 break;
             default:

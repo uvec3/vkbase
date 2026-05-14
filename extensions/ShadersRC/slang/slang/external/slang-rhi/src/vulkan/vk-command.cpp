@@ -55,6 +55,7 @@ public:
     bool m_rayTracingStateValid = false;
     RefPtr<RayTracingPipelineImpl> m_rayTracingPipeline;
     RefPtr<ShaderTableImpl> m_shaderTable;
+    ShaderTableImpl::PipelineData* m_shaderTablePipelineData = nullptr;
 
     BindingDataImpl* m_bindingData = nullptr;
 
@@ -63,6 +64,10 @@ public:
     VkStridedDeviceAddressRegionKHR m_missSBT;
     VkStridedDeviceAddressRegionKHR m_hitSBT;
     VkStridedDeviceAddressRegionKHR m_callableSBT;
+
+#if SLANG_RHI_ENABLE_AFTERMATH
+    AftermathMarkerTracker* m_aftermathMarkerTracker = nullptr;
+#endif
 
     CommandRecorder(DeviceImpl* device)
         : m_device(device)
@@ -135,6 +140,14 @@ Result CommandRecorder::record(CommandBufferImpl* commandBuffer)
 {
     m_cmdBuffer = commandBuffer->m_commandBuffer;
 
+#if SLANG_RHI_ENABLE_AFTERMATH
+    // Enable aftermath marker tracking if aftermath is enabled and extension is available.
+    if (m_device->m_aftermathCrashDumper && m_api.vkCmdSetCheckpointNV)
+    {
+        m_aftermathMarkerTracker = &commandBuffer->m_aftermathMarkerTracker;
+    }
+#endif
+
     VkCommandBufferBeginInfo beginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     SLANG_VK_RETURN_ON_FAIL(m_api.vkBeginCommandBuffer(m_cmdBuffer, &beginInfo));
@@ -187,7 +200,7 @@ Result CommandRecorder::record(CommandBufferImpl* commandBuffer)
     return SLANG_OK;
 }
 
-#define NOT_SUPPORTED(x) m_device->printWarning(x " command is not supported!")
+#define NOT_SUPPORTED(interface, method) m_device->printWarning(#interface "::" #method " is not supported!")
 
 void CommandRecorder::cmdCopyBuffer(const commands::CopyBuffer& cmd)
 {
@@ -1013,9 +1026,10 @@ void CommandRecorder::cmdSetComputeState(const commands::SetComputeState& cmd)
     {
         m_bindingData = static_cast<BindingDataImpl*>(cmd.bindingData);
         requireBindingStates(m_bindingData);
-        commitBarriers();
         setBindings(m_bindingData, VK_PIPELINE_BIND_POINT_COMPUTE);
     }
+
+    commitBarriers();
 
     m_computeStateValid = true;
 
@@ -1061,7 +1075,7 @@ void CommandRecorder::cmdSetRayTracingState(const commands::SetRayTracingState& 
 
     bool updatePipeline = !m_rayTracingStateValid || cmd.pipeline != m_rayTracingPipeline;
     bool updateBindings = updatePipeline || cmd.bindingData != m_bindingData;
-    bool updateShaderTable = !m_rayTracingStateValid || cmd.shaderTable != m_shaderTable;
+    bool updateShaderTable = updatePipeline || cmd.shaderTable != m_shaderTable;
 
     auto& api = m_device->m_api;
 
@@ -1075,39 +1089,39 @@ void CommandRecorder::cmdSetRayTracingState(const commands::SetRayTracingState& 
     {
         m_bindingData = static_cast<BindingDataImpl*>(cmd.bindingData);
         requireBindingStates(m_bindingData);
-        commitBarriers();
         setBindings(m_bindingData, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR);
     }
 
     if (updateShaderTable)
     {
         m_shaderTable = checked_cast<ShaderTableImpl*>(cmd.shaderTable);
+        m_shaderTablePipelineData = m_shaderTable->getPipelineData(m_rayTracingPipeline);
+        if (!m_shaderTablePipelineData)
+        {
+            m_rayTracingStateValid = false;
+            return;
+        }
+        requireBufferState(m_shaderTablePipelineData->buffer, ResourceState::ShaderResource);
+        DeviceAddress shaderTableAddr = m_shaderTablePipelineData->buffer->getDeviceAddress();
 
-        BufferImpl* shaderTableBuffer = m_shaderTable->getBuffer(m_rayTracingPipeline);
-        DeviceAddress shaderTableAddr = shaderTableBuffer->getDeviceAddress();
-
-        auto rtpProps = api.m_rayTracingPipelineProperties;
-        size_t alignedHandleSize =
-            math::calcAligned2(rtpProps.shaderGroupHandleSize, rtpProps.shaderGroupHandleAlignment);
-
-        // Raygen index is set at dispatch time.
+        // Raygen address, stride, and size are set at dispatch time since each raygen
+        // shader can have a different record size.
         m_rayGenTableAddr = shaderTableAddr;
-        m_raygenSBT.stride = math::calcAligned2(alignedHandleSize, rtpProps.shaderGroupBaseAlignment);
-        m_raygenSBT.deviceAddress = shaderTableAddr;
-        m_raygenSBT.size = m_raygenSBT.stride;
 
-        m_missSBT.deviceAddress = shaderTableAddr + m_shaderTable->m_raygenTableSize;
-        m_missSBT.stride = alignedHandleSize;
-        m_missSBT.size = m_shaderTable->m_missTableSize;
+        m_missSBT.deviceAddress = shaderTableAddr + m_shaderTablePipelineData->raygenTableSize;
+        m_missSBT.stride = m_shaderTablePipelineData->missRecordStride;
+        m_missSBT.size = m_shaderTablePipelineData->missTableSize;
 
         m_hitSBT.deviceAddress = m_missSBT.deviceAddress + m_missSBT.size;
-        m_hitSBT.stride = alignedHandleSize;
-        m_hitSBT.size = m_shaderTable->m_hitTableSize;
+        m_hitSBT.stride = m_shaderTablePipelineData->hitGroupRecordStride;
+        m_hitSBT.size = m_shaderTablePipelineData->hitTableSize;
 
         m_callableSBT.deviceAddress = m_hitSBT.deviceAddress + m_hitSBT.size;
-        m_callableSBT.stride = alignedHandleSize;
-        m_callableSBT.size = m_shaderTable->m_callableTableSize;
+        m_callableSBT.stride = m_shaderTablePipelineData->callableRecordStride;
+        m_callableSBT.size = m_shaderTablePipelineData->callableTableSize;
     }
+
+    commitBarriers();
 
     m_rayTracingStateValid = true;
 
@@ -1121,7 +1135,71 @@ void CommandRecorder::cmdDispatchRays(const commands::DispatchRays& cmd)
     if (!m_rayTracingStateValid)
         return;
 
-    m_raygenSBT.deviceAddress = m_rayGenTableAddr + cmd.rayGenShaderIndex * m_raygenSBT.stride;
+    if (cmd.rayGenShaderIndex >= m_shaderTable->m_rayGenShaderCount)
+        return;
+
+    // Copy entry point parameters to the SBT for the selected raygen shader.
+    // This allows ray tracing shaders to receive uniform parameters via the shader record.
+    SLANG_RHI_ASSERT(cmd.rayGenShaderIndex < m_shaderTablePipelineData->raygenInfos.size());
+    const auto& raygenInfo = m_shaderTablePipelineData->raygenInfos[cmd.rayGenShaderIndex];
+    if (raygenInfo.paramsSize > 0 && raygenInfo.entryPointIndex < m_bindingData->entryPointCount)
+    {
+        const auto& entryPointData = m_bindingData->entryPointData[raygenInfo.entryPointIndex];
+        if (entryPointData.data && entryPointData.size > 0)
+        {
+            // Insert a barrier to ensure any shader reads of the SBT are finished before we update it.
+            VkMemoryBarrier preUpdateBarrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+            preUpdateBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            preUpdateBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            m_api.vkCmdPipelineBarrier(
+                m_cmdBuffer,
+                VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                0,
+                1,
+                &preUpdateBarrier,
+                0,
+                nullptr,
+                0,
+                nullptr
+            );
+
+            // Use vkCmdUpdateBuffer to copy entry point data to the SBT.
+            // The data is written at the raygen's sbtOffset (after the shader group handle).
+            VkDeviceSize dstOffset = raygenInfo.sbtOffset;
+            VkDeviceSize copySize = std::min(entryPointData.size, raygenInfo.paramsSize);
+            m_api.vkCmdUpdateBuffer(
+                m_cmdBuffer,
+                m_shaderTablePipelineData->buffer->m_buffer.m_buffer,
+                dstOffset,
+                copySize,
+                entryPointData.data
+            );
+
+            // Insert a barrier to ensure the update is visible before tracing rays.
+            VkMemoryBarrier postUpdateBarrier = {VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+            postUpdateBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            postUpdateBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            m_api.vkCmdPipelineBarrier(
+                m_cmdBuffer,
+                VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                0,
+                1,
+                &postUpdateBarrier,
+                0,
+                nullptr,
+                0,
+                nullptr
+            );
+        }
+    }
+
+    // Set raygen SBT address and size based on the selected raygen shader.
+    // Each raygen shader can have a different record size.
+    m_raygenSBT.deviceAddress = m_rayGenTableAddr + raygenInfo.recordOffset;
+    m_raygenSBT.stride = raygenInfo.recordSize;
+    m_raygenSBT.size = raygenInfo.recordSize;
 
     m_api.vkCmdTraceRaysKHR(
         m_cmdBuffer,
@@ -1490,6 +1568,14 @@ void CommandRecorder::cmdGlobalBarrier(const commands::GlobalBarrier& cmd)
 
 void CommandRecorder::cmdPushDebugGroup(const commands::PushDebugGroup& cmd)
 {
+#if SLANG_RHI_ENABLE_AFTERMATH
+    if (m_aftermathMarkerTracker)
+    {
+        uint64_t marker = m_aftermathMarkerTracker->pushGroup(cmd.name);
+        m_api.vkCmdSetCheckpointNV(m_cmdBuffer, (const void*)marker);
+    }
+#endif
+
     if (!m_api.vkCmdBeginDebugUtilsLabelEXT)
         return;
 
@@ -1504,6 +1590,13 @@ void CommandRecorder::cmdPushDebugGroup(const commands::PushDebugGroup& cmd)
 
 void CommandRecorder::cmdPopDebugGroup(const commands::PopDebugGroup& cmd)
 {
+#if SLANG_RHI_ENABLE_AFTERMATH
+    if (m_aftermathMarkerTracker)
+    {
+        m_aftermathMarkerTracker->popGroup();
+    }
+#endif
+
     if (!m_api.vkCmdEndDebugUtilsLabelEXT)
         return;
 
@@ -1786,11 +1879,7 @@ CommandQueueImpl::CommandQueueImpl(Device* device, QueueType type)
 {
 }
 
-CommandQueueImpl::~CommandQueueImpl()
-{
-    m_api.vkQueueWaitIdle(m_queue);
-    m_api.vkDestroySemaphore(m_api.m_device, m_trackingSemaphore, nullptr);
-}
+CommandQueueImpl::~CommandQueueImpl() {}
 
 void CommandQueueImpl::init(VkQueue queue, uint32_t queueFamilyIndex)
 {
@@ -1804,6 +1893,17 @@ void CommandQueueImpl::init(VkQueue queue, uint32_t queueFamilyIndex)
         semaphoreCreateInfo.pNext = &timelineCreateInfo;
         m_api.vkCreateSemaphore(m_api.m_device, &semaphoreCreateInfo, nullptr, &m_trackingSemaphore);
     }
+}
+
+void CommandQueueImpl::shutdown()
+{
+    waitOnHost();
+    // Release all command buffers in order to release all resources they may hold.
+    m_commandBuffersPool.clear();
+    // Execute remaining deferred deletes.
+    executeDeferredDeletes();
+    SLANG_RHI_ASSERT(m_deferredDeleteQueue.empty());
+    m_api.vkDestroySemaphore(m_api.m_device, m_trackingSemaphore, nullptr);
 }
 
 Result CommandQueueImpl::createCommandBuffer(CommandBufferImpl** outCommandBuffer)
@@ -1860,8 +1960,32 @@ void CommandQueueImpl::retireCommandBuffers()
         }
     }
 
+    // Delete deferred resources that are no longer in use by the GPU.
+    executeDeferredDeletes();
+
     // Flush all device heaps
     getDevice<DeviceImpl>()->flushHeaps();
+}
+
+void CommandQueueImpl::deferDelete(Resource* resource)
+{
+    std::lock_guard<std::mutex> lock(m_deferredDeleteQueueMutex);
+    // Use current submission ID - resource will be released after this submission completes.
+    // This is conservative but simple: the resource may have been used in an earlier submission,
+    // but using the current ID ensures we don't release too early.
+    m_deferredDeleteQueue.push({m_lastSubmittedID, resource});
+}
+
+void CommandQueueImpl::executeDeferredDeletes()
+{
+    uint64_t lastFinishedID = m_lastFinishedID;
+    std::lock_guard<std::mutex> lock(m_deferredDeleteQueueMutex);
+    while (!m_deferredDeleteQueue.empty() && m_deferredDeleteQueue.front().submissionID <= lastFinishedID)
+    {
+        // GPU is done with this resource - delete it.
+        delete m_deferredDeleteQueue.front().resource;
+        m_deferredDeleteQueue.pop();
+    }
 }
 
 uint64_t CommandQueueImpl::updateLastFinishedID()
@@ -1870,9 +1994,9 @@ uint64_t CommandQueueImpl::updateLastFinishedID()
     return m_lastFinishedID;
 }
 
-Result CommandQueueImpl::createCommandEncoder(ICommandEncoder** outEncoder)
+Result CommandQueueImpl::createCommandEncoder(const CommandEncoderDesc& desc, ICommandEncoder** outEncoder)
 {
-    RefPtr<CommandEncoderImpl> encoder = new CommandEncoderImpl(m_device, this);
+    RefPtr<CommandEncoderImpl> encoder = new CommandEncoderImpl(m_device, this, desc);
     SLANG_RETURN_ON_FAIL(encoder->init());
     returnComPtr(outEncoder, encoder);
     return SLANG_OK;
@@ -1993,8 +2117,8 @@ Result CommandQueueImpl::getNativeHandle(NativeHandle* outHandle)
 
 // CommandEncoderImpl
 
-CommandEncoderImpl::CommandEncoderImpl(Device* device, CommandQueueImpl* queue)
-    : CommandEncoder(device)
+CommandEncoderImpl::CommandEncoderImpl(Device* device, CommandQueueImpl* queue, const CommandEncoderDesc& desc)
+    : CommandEncoder(device, desc)
     , m_queue(queue)
 {
 }
@@ -2033,8 +2157,19 @@ Result CommandEncoderImpl::getBindingData(RootShaderObject* rootObject, BindingD
     );
 }
 
-Result CommandEncoderImpl::finish(ICommandBuffer** outCommandBuffer)
+Result CommandEncoderImpl::finish(const CommandBufferDesc& desc, ICommandBuffer** outCommandBuffer)
 {
+    DeviceImpl* device = getDevice<DeviceImpl>();
+    bool hadLabel = m_commandBuffer->m_desc.label != nullptr;
+    m_commandBuffer->setDesc(desc);
+    if (hadLabel)
+    {
+        device->_labelObject(
+            (uint64_t)m_commandBuffer->m_commandBuffer,
+            VK_OBJECT_TYPE_COMMAND_BUFFER,
+            m_commandBuffer->m_desc.label
+        );
+    }
     SLANG_RETURN_ON_FAIL(resolvePipelines(m_device));
     m_commandBuffer->m_constantBufferPool.finish();
     CommandRecorder recorder(getDevice<DeviceImpl>());
@@ -2057,11 +2192,24 @@ CommandBufferImpl::CommandBufferImpl(Device* device, CommandQueueImpl* queue)
     : CommandBuffer(device)
     , m_queue(queue)
 {
+#if SLANG_RHI_ENABLE_AFTERMATH
+    DeviceImpl* deviceImpl = getDevice<DeviceImpl>();
+    if (deviceImpl->m_aftermathCrashDumper)
+    {
+        deviceImpl->m_aftermathCrashDumper->registerMarkerTracker(&m_aftermathMarkerTracker);
+    }
+#endif
 }
 
 CommandBufferImpl::~CommandBufferImpl()
 {
     DeviceImpl* device = getDevice<DeviceImpl>();
+#if SLANG_RHI_ENABLE_AFTERMATH
+    if (device->m_aftermathCrashDumper)
+    {
+        device->m_aftermathCrashDumper->unregisterMarkerTracker(&m_aftermathMarkerTracker);
+    }
+#endif
     device->m_api.vkFreeCommandBuffers(device->m_api.m_device, m_commandPool, 1, &m_commandBuffer);
     device->m_api.vkDestroyCommandPool(device->m_api.m_device, m_commandPool, nullptr);
     m_descriptorSetAllocator.close();
