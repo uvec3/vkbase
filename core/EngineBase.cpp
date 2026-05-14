@@ -90,6 +90,8 @@ namespace vkbase
     Event<> onSurfaceChangedEvent;
     Event<std::string_view, MessageType> onMessage;
 
+    GlobalAutoParallelTaskManager globalTaskManager;
+
 
     //the desired number of frames to be processed simultaneously (corrected when creating a swapchain with restrictions)
     uint32_t imageCount = 1;//{dep swapchain}
@@ -1474,6 +1476,8 @@ namespace vkbase
 
     int destroy()
     {
+        globalTaskManager.terminateAll();
+
         //wait for all queues on device to finish(cause errors otherwise)
         vkDeviceWaitIdle(device);
 

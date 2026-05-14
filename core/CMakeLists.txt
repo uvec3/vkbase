@@ -25,7 +25,7 @@ find_package(Vulkan REQUIRED)
 ### TARGET ###
 ##############
 
-add_library(vkbase_e  EngineBase.cpp
+add_library(vkbase_e  EngineBase.cpp ParallelTaskManager.cpp
 		${PLATFORM_DEPEND_SOURCES})
 
 

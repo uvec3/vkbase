@@ -112,4 +112,39 @@ namespace vkbase
             disable();
         }
     };
+
+
+
+
+    class OnDataUpdateReceiver: public AbstractEventReceiver<uint32_t>
+    {
+    public:
+        OnDataUpdateReceiver();
+    protected:
+        virtual void onUpdateData(uint32_t imageIndex)=0;
+    };
+
+    class OnLogicUpdateReceiver: public AbstractEventReceiver<uint32_t>
+    {
+    public:
+        OnLogicUpdateReceiver();
+    protected:
+        virtual void onUpdateLogic(uint32_t imageIndex)=0;
+    };
+
+    class OnSurfaceChangedReceiver: public AbstractEventReceiver<>
+    {
+    public:
+        OnSurfaceChangedReceiver();
+    protected:
+        virtual void onSurfaceChanged()=0;
+    };
+
+    class OnCleanupReceiver: public AbstractEventReceiver<>
+    {
+    public:
+        OnCleanupReceiver();
+    protected:
+        virtual void onCleanup()=0;
+    };
 }
