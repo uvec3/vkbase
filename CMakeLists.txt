@@ -1,7 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
 project(vkbase)
-set(CMAKE_CXX_STANDARD 20)
-
 ##include ability of shader compilation inside engine
 #set(VKBASE_SHADER_RUNTIME_COMPILE OFF  BOOL "Compile shaders at runtime extension for EngineBase")
 message(STATUS "VKBASE_SHADER_RUNTIME_COMPILE: ${VKBASE_SHADER_RUNTIME_COMPILE}")
@@ -14,7 +12,6 @@ add_subdirectory(core)
 add_subdirectory(extensions/imgui)
 add_subdirectory(extensions/Buffer)
 add_subdirectory(extensions/ShadersRC)
-#add_subdirectory(extensions/compute)
 
 
 
