@@ -1,14 +1,13 @@
 #pragma once
 
-#include <optional>
-#include <array>
+
 #include <map>
 #include <vector>
 
 #include <vulkan/vulkan.h>
 #include <vma/vk_mem_alloc.h>
 
-#include "glm/glm/vec2.hpp"
+#include "DEFINES.hpp"
 #include "SystemBeckend.hpp"
 #include "EngineParams.hpp"
 #include "ParallelTaskManager.hpp"
@@ -109,6 +108,8 @@ namespace vkbase
     void info(const std::string& str);
     void error(const std::string& str);
     void warning(const std::string& str);
+
+    auto assetsFrom(const std::string& path);
 
     VkCommandBufferInheritanceInfo createMainBufferInheritanceInfo(uint32_t imageIndex);
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties, VkMemoryHeapFlags heapFlags);

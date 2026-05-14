@@ -1730,6 +1730,16 @@ namespace vkbase
         vkWaitForFences(device, fenceRenderFinished.size(), fenceRenderFinished.data(), VK_TRUE, timeout);
     }
 
+    auto assetsFrom(const std::string& path)
+    {
+        auto generic= std::filesystem::path(path).generic_string();
+        std::string path_begin = generic+'/';
+        std::string path_end = generic+ static_cast<char>('/' + 1);
+        auto begin = assets.lower_bound(path_begin);
+        auto end = assets.upper_bound(path_end);
+        return std::ranges::subrange(begin,end);
+    }
+
     OnDataUpdateReceiver::OnDataUpdateReceiver(): AbstractEventReceiver<uint32_t>{onDrawPrepareEvent, WRAP_MEMBER_FUNC(onUpdateData)}{}
 
     OnLogicUpdateReceiver::OnLogicUpdateReceiver(): AbstractEventReceiver<uint32_t>{onDeviceSyncEvent, WRAP_MEMBER_FUNC(onUpdateLogic)}{}
