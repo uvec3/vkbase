@@ -29,7 +29,7 @@ namespace vkbase::imgui
 
         void clear();
 
-        void draw();
+        void draw(bool* show);
         void draw_as_child();
 
         void add(const std::string_view &str, glm::vec4 color=glm::vec4(-1));
@@ -38,7 +38,6 @@ namespace vkbase::imgui
         void setName(const std::string & string);
 
     private:
-        bool show= true;
         std::string name = "Log";
         void draw_internal();
     };
@@ -46,5 +45,5 @@ namespace vkbase::imgui
 
     void registerEngineMessagesLog();
     void unregisterEngineMessagesLog();
-    void drawEngineMessagesLog();
+    void drawEngineMessagesLog(bool* show = nullptr);
 }

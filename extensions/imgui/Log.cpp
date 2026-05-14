@@ -18,12 +18,12 @@ namespace vkbase::imgui
         mutex.unlock();
     }
 
-    void Log::draw()
+    void Log::draw(bool* show)
     {
-        if (!show)
+        if (show && !*show)
             return;
 
-        if (ImGui::Begin(name.c_str()), &show)
+        if (ImGui::Begin(name.c_str(), show))
         {
           draw_internal();
         }
@@ -32,9 +32,6 @@ namespace vkbase::imgui
 
     void Log::draw_as_child()
     {
-        if (!show)
-            return;
-
         if (ImGui::BeginChild(name.c_str(),ImVec2(0,0),0,ImGuiWindowFlags_HorizontalScrollbar))
         {
             ImGui::Text("Log");
@@ -131,8 +128,8 @@ namespace vkbase::imgui
         removeMessagesListener(messageEventId);
     }
 
-    void drawEngineMessagesLog()
+    void drawEngineMessagesLog(bool* show)
     {
-        uiLog.draw();
+        uiLog.draw(show);
     }
 }
