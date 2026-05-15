@@ -1,6 +1,6 @@
 /*
   Simple DirectMedia Layer
-  Copyright (C) 1997-2024 Sam Lantinga <slouken@libsdl.org>
+  Copyright (C) 1997-2026 Sam Lantinga <slouken@libsdl.org>
 
   This software is provided 'as-is', without any express or implied
   warranty.  In no event will the authors be held liable for any damages
@@ -66,6 +66,14 @@
 #define VK_ENTER 10 /* Keypad Enter ... no VKEY defined? */
 #ifndef VK_OEM_NEC_EQUAL
 #define VK_OEM_NEC_EQUAL 0x92
+#endif
+
+// Undocumented window messages
+#ifndef WM_NCUAHDRAWCAPTION
+#define WM_NCUAHDRAWCAPTION 0xAE
+#endif
+#ifndef WM_NCUAHDRAWFRAME
+#define WM_NCUAHDRAWFRAME 0xAF
 #endif
 
 /* Make sure XBUTTON stuff is defined that isn't in older Platform SDKs... */
@@ -716,6 +724,7 @@ static SDL_bool SkipAltGrLeftControl(WPARAM wParam, LPARAM lParam)
         return SDL_FALSE;
     }
 
+#if !defined(__XBOXONE__) && !defined(__XBOXSERIES__)
     /* Here is a trick: "Alt Gr" sends LCTRL, then RALT. We only
        want the RALT message, so we try to see if the next message
        is a RALT message. In that case, this is a false LCTRL! */
@@ -729,6 +738,7 @@ static SDL_bool SkipAltGrLeftControl(WPARAM wParam, LPARAM lParam)
             }
         }
     }
+#endif // !defined(__XBOXONE__) && !defined(__XBOXSERIES__)
     return SDL_FALSE;
 }
 
@@ -803,6 +813,24 @@ WIN_WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
            actually being the foreground window, but this appears to get called in all cases where
            the global foreground window changes to and from this window. */
         WIN_UpdateFocus(data->window, !!wParam);
+        
+        /* Handle borderless windows; this event is intended for drawing the titlebar, so we need
+           to stop that from happening. */
+        if (data->window->flags & SDL_WINDOW_BORDERLESS) {
+            lParam = -1; // According to MSDN, DefWindowProc will draw a title bar if lParam != -1
+        }
+    } break;
+    
+    case WM_NCUAHDRAWCAPTION:
+    case WM_NCUAHDRAWFRAME:
+    {
+        /* These messages are undocumented. They are responsible for redrawing the window frame and
+           caption. Notably, WM_NCUAHDRAWCAPTION is sent when calling SetWindowText on a window.
+           For borderless windows, we don't want to draw a frame or caption, so we should stop
+           that from happening. */
+        if (data->window->flags & SDL_WINDOW_BORDERLESS) {
+            returnCode = 0;
+        }
     } break;
 
     case WM_ACTIVATE:
@@ -1333,8 +1361,7 @@ WIN_WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     case WM_TIMER:
     {
         if (wParam == (UINT_PTR)&s_ModalMoveResizeLoop) {
-            // Send an expose event so the application can redraw
-            SDL_SendWindowEvent(data->window, SDL_WINDOWEVENT_EXPOSED, 0, 0);
+            SDL_OnWindowLiveResizeUpdate(data->window);
             return 0;
         }
     } break;

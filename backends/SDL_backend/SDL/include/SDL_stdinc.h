@@ -1,6 +1,6 @@
 /*
   Simple DirectMedia Layer
-  Copyright (C) 1997-2024 Sam Lantinga <slouken@libsdl.org>
+  Copyright (C) 1997-2026 Sam Lantinga <slouken@libsdl.org>
 
   This software is provided 'as-is', without any express or implied
   warranty.  In no event will the authors be held liable for any damages
@@ -193,58 +193,59 @@ typedef enum
 /**
  * A signed 8-bit integer type.
  */
+typedef int8_t Sint8;
 #define SDL_MAX_SINT8   ((Sint8)0x7F)           /* 127 */
 #define SDL_MIN_SINT8   ((Sint8)(~0x7F))        /* -128 */
-typedef int8_t Sint8;
 
 /**
  * An unsigned 8-bit integer type.
  */
+typedef uint8_t Uint8;
 #define SDL_MAX_UINT8   ((Uint8)0xFF)           /* 255 */
 #define SDL_MIN_UINT8   ((Uint8)0x00)           /* 0 */
-typedef uint8_t Uint8;
 
 /**
  * A signed 16-bit integer type.
  */
+typedef int16_t Sint16;
 #define SDL_MAX_SINT16  ((Sint16)0x7FFF)        /* 32767 */
 #define SDL_MIN_SINT16  ((Sint16)(~0x7FFF))     /* -32768 */
-typedef int16_t Sint16;
 
 /**
  * An unsigned 16-bit integer type.
  */
+typedef uint16_t Uint16;
 #define SDL_MAX_UINT16  ((Uint16)0xFFFF)        /* 65535 */
 #define SDL_MIN_UINT16  ((Uint16)0x0000)        /* 0 */
-typedef uint16_t Uint16;
 
 /**
  * A signed 32-bit integer type.
  */
+typedef int32_t Sint32;
 #define SDL_MAX_SINT32  ((Sint32)0x7FFFFFFF)    /* 2147483647 */
 #define SDL_MIN_SINT32  ((Sint32)(~0x7FFFFFFF)) /* -2147483648 */
-typedef int32_t Sint32;
 
 /**
  * An unsigned 32-bit integer type.
  */
+typedef uint32_t Uint32;
 #define SDL_MAX_UINT32  ((Uint32)0xFFFFFFFFu)   /* 4294967295 */
 #define SDL_MIN_UINT32  ((Uint32)0x00000000)    /* 0 */
-typedef uint32_t Uint32;
 
 /**
  * A signed 64-bit integer type.
  */
+typedef int64_t Sint64;
 #define SDL_MAX_SINT64  ((Sint64)0x7FFFFFFFFFFFFFFFll)      /* 9223372036854775807 */
 #define SDL_MIN_SINT64  ((Sint64)(~0x7FFFFFFFFFFFFFFFll))   /* -9223372036854775808 */
-typedef int64_t Sint64;
 
 /**
  * An unsigned 64-bit integer type.
  */
+typedef uint64_t Uint64;
 #define SDL_MAX_UINT64  ((Uint64)0xFFFFFFFFFFFFFFFFull)     /* 18446744073709551615 */
 #define SDL_MIN_UINT64  ((Uint64)(0x0000000000000000ull))   /* 0 */
-typedef uint64_t Uint64;
+
 
 /* @} *//* Basic data types */
 
@@ -267,9 +268,9 @@ typedef uint64_t Uint64;
 #ifndef SDL_PRIs64
 #if defined(__WIN32__) || defined(__GDK__)
 #define SDL_PRIs64 "I64d"
-#elif defined(PRIs64)
-#define SDL_PRIs64 PRIs64
-#elif defined(__LP64__) && !defined(__APPLE__)
+#elif defined(PRId64)
+#define SDL_PRIs64 PRId64
+#elif defined(__LP64__) && !defined(__APPLE__) && !defined(__EMSCRIPTEN__)
 #define SDL_PRIs64 "ld"
 #else
 #define SDL_PRIs64 "lld"
@@ -389,9 +390,12 @@ typedef uint64_t Uint64;
 
 #ifndef SDL_COMPILE_TIME_ASSERT
 #if defined(__cplusplus)
+/* Keep C++ case alone: Some versions of gcc will define __STDC_VERSION__ even when compiling in C++ mode. */
 #if (__cplusplus >= 201103L)
 #define SDL_COMPILE_TIME_ASSERT(name, x)  static_assert(x, #x)
 #endif
+#elif defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 202311L)
+#define SDL_COMPILE_TIME_ASSERT(name, x)  static_assert(x, #x)
 #elif defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
 #define SDL_COMPILE_TIME_ASSERT(name, x) _Static_assert(x, #x)
 #endif
@@ -561,6 +565,7 @@ SDL_FORCE_INLINE void SDL_memset4(void *dst, Uint32 val, size_t dwords)
         return;
     }
     switch (dwords % 4) {
+        default:
         case 0: do {    *_p++ = _val;   SDL_FALLTHROUGH;
         case 3:         *_p++ = _val;   SDL_FALLTHROUGH;
         case 2:         *_p++ = _val;   SDL_FALLTHROUGH;
@@ -744,6 +749,13 @@ size_t wcslcpy(wchar_t *dst, const wchar_t *src, size_t size);
 
 #ifndef HAVE_WCSLCAT
 size_t wcslcat(wchar_t *dst, const wchar_t *src, size_t size);
+#endif
+
+#ifndef _WIN32
+/* strdup is not ANSI but POSIX, and its prototype might be hidden... */
+/* not for windows: might conflict with string.h where strdup may have
+ * dllimport attribute: https://github.com/libsdl-org/SDL/issues/12948 */
+char *strdup(const char *str);
 #endif
 
 /* Starting LLVM 16, the analyser errors out if these functions do not have

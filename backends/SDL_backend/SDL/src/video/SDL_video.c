@@ -1,6 +1,6 @@
 /*
   Simple DirectMedia Layer
-  Copyright (C) 1997-2024 Sam Lantinga <slouken@libsdl.org>
+  Copyright (C) 1997-2026 Sam Lantinga <slouken@libsdl.org>
 
   This software is provided 'as-is', without any express or implied
   warranty.  In no event will the authors be held liable for any damages
@@ -57,6 +57,10 @@
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
+#endif
+
+#ifdef __3DS__
+#include <3ds.h>
 #endif
 
 #ifdef __LINUX__
@@ -691,7 +695,9 @@ void SDL_DelVideoDisplay(int index)
     SDL_SendDisplayEvent(&_this->displays[index], SDL_DISPLAYEVENT_DISCONNECTED, 0);
 
     SDL_free(_this->displays[index].driverdata);
+    _this->displays[index].driverdata = NULL;
     SDL_free(_this->displays[index].name);
+    _this->displays[index].name = NULL;
     if (index < (_this->num_displays - 1)) {
         SDL_memmove(&_this->displays[index], &_this->displays[index + 1], (_this->num_displays - index - 1) * sizeof(_this->displays[index]));
     }
@@ -3175,6 +3181,12 @@ void SDL_OnWindowMoved(SDL_Window *window)
     }
 }
 
+void SDL_OnWindowLiveResizeUpdate(SDL_Window *window)
+{
+    /* Send an expose event so the application can redraw */
+    SDL_SendWindowEvent(window, SDL_WINDOWEVENT_EXPOSED, 0, 0);
+}
+
 void SDL_OnWindowMinimized(SDL_Window *window)
 {
     if (!DisableUnsetFullscreenOnMinimize(_this)) {
@@ -3312,6 +3324,9 @@ void SDL_DestroyWindow(SDL_Window *window)
     if (SDL_GetKeyboardFocus() == window) {
         SDL_SetKeyboardFocus(NULL);
     }
+    if ((window->flags & SDL_WINDOW_MOUSE_CAPTURE)) {
+        SDL_UpdateMouseCapture(SDL_TRUE);
+    }
     if (SDL_GetMouseFocus() == window) {
         SDL_SetMouseFocus(NULL);
     }
@@ -3341,7 +3356,7 @@ void SDL_DestroyWindow(SDL_Window *window)
     }
 
     display = SDL_GetDisplayForWindow(window);
-    if (display->fullscreen_window == window) {
+    if (display && display->fullscreen_window == window) {
         display->fullscreen_window = NULL;
     }
 
@@ -3353,9 +3368,7 @@ void SDL_DestroyWindow(SDL_Window *window)
         _this->current_glwin = NULL;
     }
 
-    if (_this->wakeup_window == window) {
-        _this->wakeup_window = NULL;
-    }
+    SDL_AtomicCASPtr(&_this->wakeup_window, window, NULL);
 
     /* Now invalidate magic */
     window->magic = NULL;
@@ -4552,6 +4565,23 @@ int SDL_ShowSimpleMessageBox(Uint32 flags, const char *title, const char *messag
         alert(UTF8ToString($0) + "\n\n" + UTF8ToString($1));
     },
             title, message);
+    return 0;
+#elif defined(__3DS__)
+    errorConf errCnf;
+    bool hasGpuRight;
+
+    /* If the video subsystem has not been initialised, set up graphics temporarily */
+    hasGpuRight = gspHasGpuRight();
+    if (!hasGpuRight)
+        gfxInitDefault();
+
+    errorInit(&errCnf, ERROR_TEXT_WORD_WRAP, CFG_LANGUAGE_EN);
+    errorText(&errCnf, message);
+    errorDisp(&errCnf);
+
+    if (!hasGpuRight)
+        gfxExit();
+
     return 0;
 #else
     SDL_MessageBoxData data;

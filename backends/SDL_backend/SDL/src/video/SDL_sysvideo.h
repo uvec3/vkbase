@@ -1,6 +1,6 @@
 /*
   Simple DirectMedia Layer
-  Copyright (C) 1997-2024 Sam Lantinga <slouken@libsdl.org>
+  Copyright (C) 1997-2026 Sam Lantinga <slouken@libsdl.org>
 
   This software is provided 'as-is', without any express or implied
   warranty.  In no event will the authors be held liable for any damages
@@ -355,8 +355,7 @@ struct SDL_VideoDevice
     SDL_bool checked_texture_framebuffer;
     SDL_bool is_dummy;
     SDL_bool suspend_screensaver;
-    SDL_Window *wakeup_window;
-    SDL_mutex *wakeup_lock; /* Initialized only if WaitEventTimeout/SendWakeupEvent are supported */
+    void *wakeup_window;
     int num_displays;
     SDL_VideoDisplay *displays;
     SDL_Window *windows;
@@ -512,6 +511,7 @@ extern void SDL_OnWindowShown(SDL_Window *window);
 extern void SDL_OnWindowHidden(SDL_Window *window);
 extern void SDL_OnWindowMoved(SDL_Window *window);
 extern void SDL_OnWindowResized(SDL_Window *window);
+extern void SDL_OnWindowLiveResizeUpdate(SDL_Window *window);
 extern void SDL_OnWindowMinimized(SDL_Window *window);
 extern void SDL_OnWindowRestored(SDL_Window *window);
 extern void SDL_OnWindowEnter(SDL_Window *window);

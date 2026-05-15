@@ -1,7 +1,9 @@
 #include <iostream>
+#include <cstring>
 
 #include "../../core/SystemBeckend.hpp"
 #include "../../core/Event.hpp"
+
 #include "SDL_vulkan.h"
 #include <vulkan/vulkan.h>
 #include <SDL.h>

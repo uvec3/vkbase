@@ -1,6 +1,6 @@
 /*
   Simple DirectMedia Layer
-  Copyright (C) 2024 Sam Lantinga <slouken@libsdl.org>
+  Copyright (C) 2026 Sam Lantinga <slouken@libsdl.org>
 
   This software is provided 'as-is', without any express or implied
   warranty.  In no event will the authors be held liable for any damages
@@ -908,9 +908,11 @@ static void RAWINPUT_AddDevice(HANDLE hDevice)
         char *product_string = NULL;
         WCHAR string[128];
 
+        string[0] = 0;
         if (SDL_HidD_GetManufacturerString(hFile, string, sizeof(string))) {
             manufacturer_string = WIN_StringToUTF8W(string);
         }
+        string[0] = 0;
         if (SDL_HidD_GetProductString(hFile, string, sizeof(string))) {
             product_string = WIN_StringToUTF8W(string);
         }
@@ -1025,7 +1027,7 @@ static int RAWINPUT_JoystickInit(void)
 {
     SDL_assert(!SDL_RAWINPUT_inited);
 
-    if (!SDL_GetHintBoolean(SDL_HINT_JOYSTICK_RAWINPUT, SDL_TRUE)) {
+    if (!SDL_GetHintBoolean(SDL_HINT_JOYSTICK_RAWINPUT, SDL_FALSE)) {
         return 0;
     }
 
@@ -1290,6 +1292,7 @@ static int RAWINPUT_JoystickOpen(SDL_Joystick *joystick, int device_index)
     value_caps = SDL_stack_alloc(HIDP_VALUE_CAPS, caps.NumberInputValueCaps);
     if (SDL_HidP_GetValueCaps(HidP_Input, value_caps, &caps.NumberInputValueCaps, ctx->preparsed_data) != HIDP_STATUS_SUCCESS) {
         RAWINPUT_JoystickClose(joystick);
+        SDL_stack_free(button_caps);
         return SDL_SetError("Couldn't get device value capabilities");
     }
 
@@ -1318,6 +1321,8 @@ static int RAWINPUT_JoystickOpen(SDL_Joystick *joystick, int device_index)
         ctx->button_indices = (USHORT *)SDL_malloc(joystick->nbuttons * sizeof(*ctx->button_indices));
         if (!ctx->button_indices) {
             RAWINPUT_JoystickClose(joystick);
+            SDL_stack_free(value_caps);
+            SDL_stack_free(button_caps);
             return SDL_OutOfMemory();
         }
 
@@ -1341,6 +1346,8 @@ static int RAWINPUT_JoystickOpen(SDL_Joystick *joystick, int device_index)
         ctx->guide_hack = SDL_TRUE;
         joystick->nbuttons += 1;
     }
+
+    SDL_stack_free(button_caps);
 
     for (i = 0; i < caps.NumberInputValueCaps; ++i) {
         HIDP_VALUE_CAPS *cap = &value_caps[i];
@@ -1371,6 +1378,7 @@ static int RAWINPUT_JoystickOpen(SDL_Joystick *joystick, int device_index)
         ctx->axis_indices = (USHORT *)SDL_malloc(joystick->naxes * sizeof(*ctx->axis_indices));
         if (!ctx->axis_indices) {
             RAWINPUT_JoystickClose(joystick);
+            SDL_stack_free(value_caps);
             return SDL_OutOfMemory();
         }
 
@@ -1404,6 +1412,7 @@ static int RAWINPUT_JoystickOpen(SDL_Joystick *joystick, int device_index)
         ctx->hat_indices = (USHORT *)SDL_malloc(joystick->nhats * sizeof(*ctx->hat_indices));
         if (!ctx->hat_indices) {
             RAWINPUT_JoystickClose(joystick);
+            SDL_stack_free(value_caps);
             return SDL_OutOfMemory();
         }
 
@@ -1421,6 +1430,8 @@ static int RAWINPUT_JoystickOpen(SDL_Joystick *joystick, int device_index)
             ctx->hat_indices[hat_index++] = cap->NotRange.DataIndex;
         }
     }
+
+    SDL_stack_free(value_caps);
 
     joystick->epowerlevel = SDL_JOYSTICK_POWER_UNKNOWN;
 

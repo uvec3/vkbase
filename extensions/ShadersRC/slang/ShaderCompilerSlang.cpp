@@ -3,16 +3,23 @@
 #include <chrono>
 #include <iostream>
 #include <mutex>
-#include <slang.h>
-#include <slang-com-ptr.h>
 #include <stdexcept>
 #include <vector>
-#include <ranges>
-#include "slang/external/spirv-tools/include/spirv-tools/libspirv.h"
-
-#include <boost/regex.hpp>
 #include <map>
 #include <string>
+#include <thread>
+#include <ranges>
+#include <algorithm>
+
+#include <boost/regex.hpp>
+
+#include <slang.h>
+#include <slang-com-ptr.h>
+
+#include "slang/external/spirv-tools/include/spirv-tools/libspirv.h"
+
+
+
 
 
 namespace vkbase::ShadersRC
@@ -184,7 +191,7 @@ namespace vkbase::ShadersRC
         }
         if (!module)
         {
-            return {{},std::string(diagnostics_string)};
+            return {std::vector<uint32_t>{},std::string(diagnostics_string)};
         }
 
         Slang::ComPtr<slang::IEntryPoint> entryPoint;
@@ -206,7 +213,7 @@ namespace vkbase::ShadersRC
                                               diagnostics->getBufferSize());
         if (SLANG_FAILED(result))
         {
-            return {{},std::string(diagnostics_string)};
+            return {std::vector<uint32_t>{},std::string(diagnostics_string)};
         }
 
         //Linking
@@ -218,7 +225,7 @@ namespace vkbase::ShadersRC
                                               diagnostics->getBufferSize());
         if (SLANG_FAILED(result))
         {
-            return {{},std::string(diagnostics_string)};
+            return {std::vector<uint32_t>{},std::string(diagnostics_string)};
         }
 
 
@@ -238,7 +245,7 @@ namespace vkbase::ShadersRC
                                               diagnostics->getBufferSize());
         if (SLANG_FAILED(result))
         {
-            return {{},std::string(diagnostics_string)};
+            return {std::vector<uint32_t>{},std::string(diagnostics_string)};
         }
 
         spirv = blobToSpirvVector(kernelBlob);

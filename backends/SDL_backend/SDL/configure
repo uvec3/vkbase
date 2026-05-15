@@ -1672,7 +1672,7 @@ Optional Features:
   --enable-ssemath        Allow GCC to use SSE floating point math
                           [default=maybe]
   --enable-mmx            use MMX assembly routines [default=yes]
-  --enable-3dnow          use 3DNow! assembly routines [default=yes]
+  --enable-3dnow          use 3DNow! assembly routines [default=no]
   --enable-sse            use SSE assembly routines [default=yes]
   --enable-sse2           use SSE2 assembly routines [default=maybe]
   --enable-sse3           use SSE3 assembly routines [default=maybe]
@@ -3515,8 +3515,8 @@ orig_CFLAGS="$CFLAGS"
 
 # See docs/release_checklist.md
 SDL_MAJOR_VERSION=2
-SDL_MINOR_VERSION=31
-SDL_MICRO_VERSION=0
+SDL_MINOR_VERSION=32
+SDL_MICRO_VERSION=11
 SDL_VERSION=$SDL_MAJOR_VERSION.$SDL_MINOR_VERSION.$SDL_MICRO_VERSION
 
 SDL_BINARY_AGE=`expr $SDL_MINOR_VERSION \* 100 + $SDL_MICRO_VERSION`
@@ -5815,7 +5815,7 @@ cygwin*)
   # func_win32_libid is a shell function defined in ltmain.sh
   lt_cv_deplibs_check_method='file_magic ^x86 archive import|^x86 DLL'
   lt_cv_file_magic_cmd='func_win32_libid'
-  lt_cv_deplibs_check_method=pass_all # SDL customization
+  lt_cv_deplibs_check_method=pass_all # SDL customization.
   ;;
 
 mingw* | windows* | pw32*)
@@ -5827,10 +5827,10 @@ mingw* | windows* | pw32*)
     lt_cv_file_magic_cmd='func_win32_libid'
   else
     # Keep this pattern in sync with the one in func_win32_libid.
-    lt_cv_deplibs_check_method='file_magic file format (pei*-i386(.*architecture: i386)?|pe-arm-wince|pe-x86-64)'
+    lt_cv_deplibs_check_method='file_magic file format (pei*-i386(.*architecture: i386)?|pe-arm-wince|pe-x86-64|pe-aarch64)'
     lt_cv_file_magic_cmd='$OBJDUMP -f'
   fi
-  lt_cv_deplibs_check_method=pass_all # SDL customization
+  lt_cv_deplibs_check_method=pass_all # SDL customization.
   ;;
 
 cegcc*)
@@ -10023,17 +10023,17 @@ _LT_EOF
       hardcode_minus_L=yes
       allow_undefined_flag=unsupported
       shrext_cmds=.dll
-      archive_cmds='$ECHO "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
-	$ECHO "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
-	$ECHO "DATA MULTIPLE NONSHARED" >> $output_objdir/$libname.def~
-	$ECHO EXPORTS >> $output_objdir/$libname.def~
+      archive_cmds='echo "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
+	echo "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
+	echo "DATA MULTIPLE NONSHARED" >> $output_objdir/$libname.def~
+	echo EXPORTS >> $output_objdir/$libname.def~
 	emxexp $libobjs | $SED /"_DLL_InitTerm"/d >> $output_objdir/$libname.def~
 	$CC -Zdll -Zcrtdll -o $output_objdir/$soname $libobjs $deplibs $compiler_flags $output_objdir/$libname.def~
 	emximp -o $lib $output_objdir/$libname.def'
-      archive_expsym_cmds='$ECHO "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
-	$ECHO "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
-	$ECHO "DATA MULTIPLE NONSHARED" >> $output_objdir/$libname.def~
-	$ECHO EXPORTS >> $output_objdir/$libname.def~
+      archive_expsym_cmds='echo "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
+	echo "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
+	echo "DATA MULTIPLE NONSHARED" >> $output_objdir/$libname.def~
+	echo EXPORTS >> $output_objdir/$libname.def~
 	prefix_cmds="$SED"~
 	if test EXPORTS = "`$SED 1q $export_symbols`"; then
 	  prefix_cmds="$prefix_cmds -e 1d";
@@ -10042,7 +10042,6 @@ _LT_EOF
 	cat $export_symbols | $prefix_cmds >> $output_objdir/$libname.def~
 	$CC -Zdll -Zcrtdll -o $output_objdir/$soname $libobjs $deplibs $compiler_flags $output_objdir/$libname.def~
 	emximp -o $lib $output_objdir/$libname.def'
-      old_archive_from_new_cmds='emximp -o $output_objdir/${libname}_dll.a $output_objdir/$libname.def'
       enable_shared_with_static_runtimes=yes
       file_list_spec='@'
       ;;
@@ -10885,17 +10884,17 @@ printf "%s\n" "$lt_cv_irix_exported_symbol" >&6; }
       hardcode_minus_L=yes
       allow_undefined_flag=unsupported
       shrext_cmds=.dll
-      archive_cmds='$ECHO "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
-	$ECHO "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
-	$ECHO "DATA MULTIPLE NONSHARED" >> $output_objdir/$libname.def~
-	$ECHO EXPORTS >> $output_objdir/$libname.def~
+      archive_cmds='echo "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
+	echo "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
+	echo "DATA MULTIPLE NONSHARED" >> $output_objdir/$libname.def~
+	echo EXPORTS >> $output_objdir/$libname.def~
 	emxexp $libobjs | $SED /"_DLL_InitTerm"/d >> $output_objdir/$libname.def~
 	$CC -Zdll -Zcrtdll -o $output_objdir/$soname $libobjs $deplibs $compiler_flags $output_objdir/$libname.def~
 	emximp -o $lib $output_objdir/$libname.def'
-      archive_expsym_cmds='$ECHO "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
-	$ECHO "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
-	$ECHO "DATA MULTIPLE NONSHARED" >> $output_objdir/$libname.def~
-	$ECHO EXPORTS >> $output_objdir/$libname.def~
+      archive_expsym_cmds='echo "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
+	echo "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
+	echo "DATA MULTIPLE NONSHARED" >> $output_objdir/$libname.def~
+	echo EXPORTS >> $output_objdir/$libname.def~
 	prefix_cmds="$SED"~
 	if test EXPORTS = "`$SED 1q $export_symbols`"; then
 	  prefix_cmds="$prefix_cmds -e 1d";
@@ -10904,7 +10903,6 @@ printf "%s\n" "$lt_cv_irix_exported_symbol" >&6; }
 	cat $export_symbols | $prefix_cmds >> $output_objdir/$libname.def~
 	$CC -Zdll -Zcrtdll -o $output_objdir/$soname $libobjs $deplibs $compiler_flags $output_objdir/$libname.def~
 	emximp -o $lib $output_objdir/$libname.def'
-      old_archive_from_new_cmds='emximp -o $output_objdir/${libname}_dll.a $output_objdir/$libname.def'
       enable_shared_with_static_runtimes=yes
       file_list_spec='@'
       ;;
@@ -11600,14 +11598,14 @@ cygwin* | mingw* | windows* | pw32* | cegcc*)
     cygwin*)
       # Cygwin DLLs use 'cyg' prefix rather than 'lib'
       #soname_spec='`echo $libname | sed -e 's/^lib/cyg/'``echo $release | $SED -e 's/[[.]]/-/g'`$versuffix$shared_ext'
-      soname_spec='`echo $libname | sed -e 's/^lib//'`$shared_ext' # SDL customization
+      soname_spec='`echo $libname | sed -e 's/^lib//'`$shared_ext' # SDL customization.
 
       sys_lib_search_path_spec="$sys_lib_search_path_spec /usr/lib/w32api"
       ;;
     mingw* | windows* | cegcc*)
       # MinGW DLLs use traditional 'lib' prefix
       #soname_spec='$libname`echo $release | $SED -e 's/[[.]]/-/g'`$versuffix$shared_ext'
-      soname_spec='`echo $libname | $SED -e 's/^lib//'`$shared_ext' # SDL customization
+      soname_spec='`echo $libname | $SED -e 's/^lib//'`$shared_ext' # SDL customization.
       ;;
     pw32*)
       # pw32 DLLs use 'pw' prefix rather than 'lib'
@@ -15164,17 +15162,17 @@ fi
 	hardcode_minus_L_CXX=yes
 	allow_undefined_flag_CXX=unsupported
 	shrext_cmds=.dll
-	archive_cmds_CXX='$ECHO "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
-	  $ECHO "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
-	  $ECHO "DATA MULTIPLE NONSHARED" >> $output_objdir/$libname.def~
-	  $ECHO EXPORTS >> $output_objdir/$libname.def~
+	archive_cmds_CXX='echo "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
+	  echo "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
+	  echo "DATA MULTIPLE NONSHARED" >> $output_objdir/$libname.def~
+	  echo EXPORTS >> $output_objdir/$libname.def~
 	  emxexp $libobjs | $SED /"_DLL_InitTerm"/d >> $output_objdir/$libname.def~
 	  $CC -Zdll -Zcrtdll -o $output_objdir/$soname $libobjs $deplibs $compiler_flags $output_objdir/$libname.def~
 	  emximp -o $lib $output_objdir/$libname.def'
-	archive_expsym_cmds_CXX='$ECHO "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
-	  $ECHO "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
-	  $ECHO "DATA MULTIPLE NONSHARED" >> $output_objdir/$libname.def~
-	  $ECHO EXPORTS >> $output_objdir/$libname.def~
+	archive_expsym_cmds_CXX='echo "LIBRARY ${soname%$shared_ext} INITINSTANCE TERMINSTANCE" > $output_objdir/$libname.def~
+	  echo "DESCRIPTION \"$libname\"" >> $output_objdir/$libname.def~
+	  echo "DATA MULTIPLE NONSHARED" >> $output_objdir/$libname.def~
+	  echo EXPORTS >> $output_objdir/$libname.def~
 	  prefix_cmds="$SED"~
 	  if test EXPORTS = "`$SED 1q $export_symbols`"; then
 	    prefix_cmds="$prefix_cmds -e 1d";
@@ -15183,7 +15181,6 @@ fi
 	  cat $export_symbols | $prefix_cmds >> $output_objdir/$libname.def~
 	  $CC -Zdll -Zcrtdll -o $output_objdir/$soname $libobjs $deplibs $compiler_flags $output_objdir/$libname.def~
 	  emximp -o $lib $output_objdir/$libname.def'
-	old_archive_from_new_cmds_CXX='emximp -o $output_objdir/${libname}_dll.a $output_objdir/$libname.def'
 	enable_shared_with_static_runtimes_CXX=yes
 	file_list_spec_CXX='@'
 	;;
@@ -16984,13 +16981,13 @@ cygwin* | mingw* | windows* | pw32* | cegcc*)
     cygwin*)
       # Cygwin DLLs use 'cyg' prefix rather than 'lib'
       #soname_spec='`echo $libname | sed -e 's/^lib/cyg/'``echo $release | $SED -e 's/[[.]]/-/g'`$versuffix$shared_ext'
-      soname_spec='`echo $libname | sed -e 's/^lib//'`$shared_ext' # SDL customization
+      soname_spec='`echo $libname | sed -e 's/^lib//'`$shared_ext' # SDL customization.
 
       ;;
     mingw* | windows* | cegcc*)
       # MinGW DLLs use traditional 'lib' prefix
       #soname_spec='$libname`echo $release | $SED -e 's/[[.]]/-/g'`$versuffix$shared_ext'
-      soname_spec='`echo $libname | $SED -e 's/^lib//'`$shared_ext' # SDL customization
+      soname_spec='`echo $libname | $SED -e 's/^lib//'`$shared_ext' # SDL customization.
       ;;
     pw32*)
       # pw32 DLLs use 'pw' prefix rather than 'lib'
@@ -19758,6 +19755,12 @@ then :
   printf "%s\n" "#define HAVE_SIGACTION 1" >>confdefs.h
 
 fi
+ac_fn_c_check_func "$LINENO" "sigtimedwait" "ac_cv_func_sigtimedwait"
+if test "x$ac_cv_func_sigtimedwait" = xyes
+then :
+  printf "%s\n" "#define HAVE_SIGTIMEDWAIT 1" >>confdefs.h
+
+fi
 ac_fn_c_check_func "$LINENO" "setjmp" "ac_cv_func_setjmp"
 if test "x$ac_cv_func_setjmp" = xyes
 then :
@@ -20699,7 +20702,7 @@ if test ${enable_3dnow+y}
 then :
   enableval=$enable_3dnow;
 else $as_nop
-  enable_3dnow=yes
+  enable_3dnow=no
 fi
 
     if test x$enable_3dnow = xyes; then
@@ -21088,7 +21091,7 @@ printf "%s\n" "#define HAVE_ALTIVEC_H 1" >>confdefs.h
     fi
 fi
 
-    # Check whether --enable-lsx was given.
+# Check whether --enable-lsx was given.
 if test ${enable_lsx+y}
 then :
   enableval=$enable_lsx;
@@ -21096,20 +21099,20 @@ else $as_nop
   enable_lsx=yes
 fi
 
-    if test x$enable_lsx = xyes; then
-        save_CFLAGS="$CFLAGS"
-        have_gcc_lsx=no
-        { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for GCC -mlsx option" >&5
+if test x$enable_lsx = xyes; then
+    save_CFLAGS="$CFLAGS"
+    have_gcc_lsx=no
+    { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for GCC -mlsx option" >&5
 printf %s "checking for GCC -mlsx option... " >&6; }
-        lsx_CFLAGS="-mlsx"
-        CFLAGS="$save_CFLAGS $lsx_CFLAGS"
+    lsx_CFLAGS="-mlsx"
+    CFLAGS="$save_CFLAGS $lsx_CFLAGS"
 
-        cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+    cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 
-        #ifndef __loongarch_sx
-        #error Assembler CPP flag not enabled
-        #endif
+    #ifndef __loongarch_sx
+    #error Assembler CPP flag not enabled
+    #endif
 
 int
 main (void)
@@ -21124,19 +21127,19 @@ then :
   have_gcc_lsx=yes
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.beam conftest.$ac_ext
-        { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $have_gcc_lsx" >&5
+    { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $have_gcc_lsx" >&5
 printf "%s\n" "$have_gcc_lsx" >&6; }
-        CFLAGS="$save_CFLAGS"
+    CFLAGS="$save_CFLAGS"
 
-        if test x$have_gcc_lsx = xyes; then
-            EXTRA_CFLAGS="$EXTRA_CFLAGS $lsx_CFLAGS"
-            SUMMARY_math="${SUMMARY_math} lsx"
-        fi
+    if test x$have_gcc_lsx = xyes; then
+       EXTRA_CFLAGS="$EXTRA_CFLAGS $lsx_CFLAGS"
+       SUMMARY_math="${SUMMARY_math} lsx"
     fi
+fi
 
-    { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for lsxintrin.h" >&5
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for lsxintrin.h" >&5
 printf %s "checking for lsxintrin.h... " >&6; }
-    cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 #include <lsxintrin.h>
 int
@@ -21154,13 +21157,13 @@ else $as_nop
   have_lsxintrin_h_hdr=no
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.beam conftest.$ac_ext
-    { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $have_lsxintrin_h_hdr" >&5
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $have_lsxintrin_h_hdr" >&5
 printf "%s\n" "$have_lsxintrin_h_hdr" >&6; }
-    if test x$have_lsxintrin_h_hdr = xyes; then
+if test x$have_lsxintrin_h_hdr = xyes; then
 
 printf "%s\n" "#define HAVE_LSXINTRIN_H 1" >>confdefs.h
 
-    fi
+fi
 
 CheckOSS()
 {
@@ -22424,7 +22427,6 @@ printf %s "checking for NAS audio support... " >&6; }
             have_nas=yes
             NAS_CFLAGS="-I/usr/X11R6/include/"
             NAS_LIBS="-L/usr/X11R6/lib -laudio -lXt"
-
         fi
 
         { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $have_nas" >&5
@@ -28090,7 +28092,7 @@ printf %s "checking for usbhid... " >&6; }
                 cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 
-                  #include <sys/types.h>
+                  #include <stdint.h>
                   #if defined(HAVE_USB_H)
                   #include <usb.h>
                   #endif
@@ -28136,7 +28138,7 @@ printf %s "checking for ucr_data member of usb_ctl_report... " >&6; }
                     cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 
-                      #include <sys/types.h>
+                      #include <stdint.h>
                       #if defined(HAVE_USB_H)
                       #include <usb.h>
                       #endif
@@ -28183,7 +28185,7 @@ printf %s "checking for new usbhid API... " >&6; }
                     cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 
-                      #include <sys/types.h>
+                      #include <stdint.h>
                       #if defined(HAVE_USB_H)
                       #include <usb.h>
                       #endif
@@ -28396,7 +28398,8 @@ fi
 
         if test x$hidapi_support = xyes; then
             if test x$have_libusb_h = xyes; then
-                printf "%s\n" "#define HAVE_LIBUSB 1" >>confdefs.h
+
+printf "%s\n" "#define HAVE_LIBUSB 1" >>confdefs.h
 
                 EXTRA_CFLAGS="$EXTRA_CFLAGS $LIBUSB_CFLAGS"
                 if test x$require_hidapi_libusb = xyes; then
@@ -28743,12 +28746,23 @@ printf "%s\n" "#define SDL_VIDEO_DRIVER_ANDROID 1" >>confdefs.h
         if test x$enable_audio = xyes; then
           case $ARCH in
             sysv5|solaris|hpux)
+                # Newer Solaris-based systems, like OpenIndiana, don't have this interface anymore. Check for the header first.
+                ac_fn_c_check_header_compile "$LINENO" "sys/audioio.h" "ac_cv_header_sys_audioio_h" "$ac_includes_default"
+if test "x$ac_cv_header_sys_audioio_h" = xyes
+then :
+  have_sys_audioio_h=yes
+else $as_nop
+  have_sys_audioio_h=no
+fi
+
+                if test x$have_sys_audioio_h = xyes; then
 
 printf "%s\n" "#define SDL_AUDIO_DRIVER_SUNAUDIO 1" >>confdefs.h
 
-                SOURCES="$SOURCES $srcdir/src/audio/sun/*.c"
-                SUMMARY_audio="${SUMMARY_audio} sun"
-                have_audio=yes
+                    SOURCES="$SOURCES $srcdir/src/audio/sun/*.c"
+                    SUMMARY_audio="${SUMMARY_audio} sun"
+                    have_audio=yes
+                fi
             ;;
             netbsd)  # Don't use this on OpenBSD, it's busted.
 

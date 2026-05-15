@@ -1,6 +1,6 @@
 /*
   Simple DirectMedia Layer
-  Copyright (C) 1997-2024 Sam Lantinga <slouken@libsdl.org>
+  Copyright (C) 1997-2026 Sam Lantinga <slouken@libsdl.org>
 
   This software is provided 'as-is', without any express or implied
   warranty.  In no event will the authors be held liable for any damages
@@ -260,12 +260,25 @@ static SDL_bool keyboard_repeat_key_is_set(SDL_WaylandKeyboardRepeat *repeat_inf
     return repeat_info->is_initialized && repeat_info->is_key_down && key == repeat_info->key;
 }
 
+static void sync_done_handler(void *data, struct wl_callback *callback, uint32_t callback_data)
+{
+    /* Nothing to do, just destroy the callback */
+    wl_callback_destroy(callback);
+}
+
+static struct wl_callback_listener sync_listener = {
+    sync_done_handler
+};
+
 void Wayland_SendWakeupEvent(_THIS, SDL_Window *window)
 {
     SDL_VideoData *d = _this->driverdata;
 
-    /* TODO: Maybe use a pipe to avoid the compositor roundtrip? */
-    wl_display_sync(d->display);
+    /* Queue a sync event to unblock the event queue fd if it's empty and being waited on.
+     * TODO: Maybe use a pipe to avoid the compositor roundtrip?
+     */
+    struct wl_callback *cb = wl_display_sync(d->display);
+    wl_callback_add_listener(cb, &sync_listener, NULL);
     WAYLAND_wl_display_flush(d->display);
 }
 
@@ -919,6 +932,28 @@ static void touch_handler_frame(void *data, struct wl_touch *touch)
 
 static void touch_handler_cancel(void *data, struct wl_touch *touch)
 {
+	struct SDL_WaylandTouchPoint *tp;
+	while ((tp = touch_points.head)) {
+		wl_fixed_t fx = 0, fy = 0;
+		struct wl_surface *surface = NULL;
+		int id = tp->id;
+
+		touch_del(id, &fx, &fy, &surface);
+
+		if (surface) {
+			SDL_WindowData *window_data = (SDL_WindowData *)wl_surface_get_user_data(surface);
+
+			if (window_data) {
+				const double dblx = wl_fixed_to_double(fx) * window_data->pointer_scale_x;
+				const double dbly = wl_fixed_to_double(fy) * window_data->pointer_scale_y;
+				const float x = dblx / window_data->sdlwindow->w;
+				const float y = dbly / window_data->sdlwindow->h;
+
+				SDL_SendTouch((SDL_TouchID)(intptr_t)touch, (SDL_FingerID)id,
+					      window_data->sdlwindow, SDL_FALSE, x, y, 1.0f);
+			}
+		}
+	}
 }
 
 static const struct wl_touch_listener touch_listener = {
@@ -2149,6 +2184,18 @@ void Wayland_add_primary_selection_device_manager(SDL_VideoData *d, uint32_t id,
 
 void Wayland_add_text_input_manager(SDL_VideoData *d, uint32_t id, uint32_t version)
 {
+#ifdef HAVE_FCITX
+    const char *im_module = SDL_getenv("SDL_IM_MODULE");
+    if (im_module && SDL_strcmp(im_module, "fcitx") == 0) {
+        /* Override the Wayland text-input protocol when Fcitx is enabled, like how GTK_IM_MODULE does.
+         *
+         * The Fcitx wiki discourages enabling it under Wayland via SDL_IM_MODULE, so its presence must
+         * be intentional, and this workaround is needed for fixing key repeat detection.
+         */
+        return;
+    }
+#endif
+
     d->text_input_manager = wl_registry_bind(d->registry, id, &zwp_text_input_manager_v3_interface, 1);
 
     if (d->input) {
@@ -2537,6 +2584,9 @@ void Wayland_display_destroy_input(SDL_VideoData *d)
         if (input->primary_selection_device->selection_offer) {
             Wayland_primary_selection_offer_destroy(input->primary_selection_device->selection_offer);
         }
+        if (input->primary_selection_device->primary_selection_device) {
+            zwp_primary_selection_device_v1_destroy(input->primary_selection_device->primary_selection_device);
+        }
         SDL_free(input->primary_selection_device);
     }
 
@@ -2631,23 +2681,28 @@ static void relative_pointer_handle_relative_motion(void *data,
     struct SDL_WaylandInput *input = data;
     SDL_VideoData *d = input->display;
     SDL_WindowData *window = input->pointer_focus;
-    double dx_unaccel;
-    double dy_unaccel;
     double dx;
     double dy;
+    double dx_mod;
+    double dy_mod;
 
-    dx_unaccel = wl_fixed_to_double(dx_unaccel_w);
-    dy_unaccel = wl_fixed_to_double(dy_unaccel_w);
+    if (!d->relative_mode_accelerated) {
+        dx = wl_fixed_to_double(dx_unaccel_w);
+        dy = wl_fixed_to_double(dy_unaccel_w);
+    } else {
+        dx = wl_fixed_to_double(dx_w) * (window ? window->pointer_scale_x : 1.0);
+        dy = wl_fixed_to_double(dy_w) * (window ? window->pointer_scale_y : 1.0);
+    }
 
     /* Add left over fraction from last event. */
-    dx_unaccel += input->dx_frac;
-    dy_unaccel += input->dy_frac;
+    dx += input->dx_frac;
+    dy += input->dy_frac;
 
-    input->dx_frac = modf(dx_unaccel, &dx);
-    input->dy_frac = modf(dy_unaccel, &dy);
+    input->dx_frac = modf(dx, &dx_mod);
+    input->dy_frac = modf(dy, &dy_mod);
 
     if (input->pointer_focus && d->relative_mouse_mode) {
-        SDL_SendMouseMotion(window->sdlwindow, 0, 1, (int)dx, (int)dy);
+        SDL_SendMouseMotion(window->sdlwindow, 0, 1, (int)dx_mod, (int)dy_mod);
     }
 }
 

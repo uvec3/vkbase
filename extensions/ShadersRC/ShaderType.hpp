@@ -2,6 +2,7 @@
 #include <string>
 #include <map>
 #include <vector>
+#include <cstdint>
 
 namespace vkbase::ShadersRC
 {

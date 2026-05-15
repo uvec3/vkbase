@@ -1,6 +1,6 @@
 /*
   Simple DirectMedia Layer
-  Copyright (C) 1997-2024 Sam Lantinga <slouken@libsdl.org>
+  Copyright (C) 1997-2026 Sam Lantinga <slouken@libsdl.org>
 
   This software is provided 'as-is', without any express or implied
   warranty.  In no event will the authors be held liable for any damages
@@ -293,6 +293,8 @@ static Uint32 initial_flightstick_devices[] = {
     MAKE_VIDPID(0x046d, 0xc215), /* Logitech Extreme 3D */
     MAKE_VIDPID(0x231d, 0x0126), /* Gunfighter Mk.III ‘Space Combat Edition’ (right) */
     MAKE_VIDPID(0x231d, 0x0127), /* Gunfighter Mk.III ‘Space Combat Edition’ (left) */
+    MAKE_VIDPID(0x3344, 0x4391), /* VIRPIL Controls R-VPC Stick MT-50CM3 */
+    MAKE_VIDPID(0x3344, 0x8390), /* VIRPIL Controls L-VPC Stick MT-50CM3 */
     MAKE_VIDPID(0x362c, 0x0001), /* Yawman Arrow */
 };
 static SDL_vidpid_list flightstick_devices = {
@@ -332,6 +334,7 @@ static SDL_vidpid_list rog_gamepad_mice = {
 static Uint32 initial_throttle_devices[] = {
     MAKE_VIDPID(0x044f, 0x0404), /* HOTAS Warthog Throttle */
     MAKE_VIDPID(0x0738, 0xa221), /* Saitek Pro Flight X-56 Rhino Throttle */
+    MAKE_VIDPID(0x3344, 0x0196), /* VIRPIL Controls VPC VMAX Prime Throttle */
 };
 static SDL_vidpid_list throttle_devices = {
     SDL_HINT_JOYSTICK_THROTTLE_DEVICES, 0, 0, NULL,
@@ -370,6 +373,7 @@ static Uint32 initial_wheel_devices[] = {
     MAKE_VIDPID(0x044f, 0xb65e), /* Thrustmaster T500RS */
     MAKE_VIDPID(0x044f, 0xb664), /* Thrustmaster TX (initial mode) */
     MAKE_VIDPID(0x044f, 0xb669), /* Thrustmaster TX (active mode) */
+    MAKE_VIDPID(0x044f, 0xb67f), /* Thrustmaster TMX */
     MAKE_VIDPID(0x044f, 0xb691), /* Thrustmaster TS-XW (initial mode) */
     MAKE_VIDPID(0x044f, 0xb692), /* Thrustmaster TS-XW (active mode) */
     MAKE_VIDPID(0x0483, 0x0522), /* Simagic Wheelbase (including M10, Alpha Mini, Alpha, Alpha U) */
@@ -394,7 +398,8 @@ static Uint32 initial_wheel_devices[] = {
     MAKE_VIDPID(0x2433, 0xf301), /* Asetek SimSports Forte Wheelbase */
     MAKE_VIDPID(0x2433, 0xf303), /* Asetek SimSports La Prima Wheelbase */
     MAKE_VIDPID(0x2433, 0xf306), /* Asetek SimSports Tony Kannan Wheelbase */
-    MAKE_VIDPID(0x3416,	0x0301), /* Cammus C5 Wheelbase */
+    MAKE_VIDPID(0x3416, 0x0301), /* Cammus C5 Wheelbase */
+    MAKE_VIDPID(0x3416, 0x0302), /* Cammus C12 Wheelbase */
     MAKE_VIDPID(0x346e, 0x0000), /* Moza R16/R21 Wheelbase */
     MAKE_VIDPID(0x346e, 0x0002), /* Moza R9 Wheelbase */
     MAKE_VIDPID(0x346e, 0x0004), /* Moza R5 Wheelbase */
@@ -1412,9 +1417,13 @@ int SDL_JoystickRumble(SDL_Joystick *joystick, Uint16 low_frequency_rumble, Uint
             retval = 0;
         } else {
             retval = joystick->driver->Rumble(joystick, low_frequency_rumble, high_frequency_rumble);
-            joystick->rumble_resend = SDL_GetTicks() + SDL_RUMBLE_RESEND_MS;
-            if (!joystick->rumble_resend) {
-                joystick->rumble_resend = 1;
+            if (retval == 0) {
+                joystick->rumble_resend = SDL_GetTicks() + SDL_RUMBLE_RESEND_MS;
+                if (joystick->rumble_resend == 0) {
+                    joystick->rumble_resend = 1;
+                }
+            } else {
+                joystick->rumble_resend = 0;
             }
         }
 
@@ -2177,12 +2186,14 @@ void SDL_JoystickUpdate(void)
 #endif /* SDL_JOYSTICK_HIDAPI */
 
     for (joystick = SDL_joysticks; joystick; joystick = joystick->next) {
-        if (joystick->attached) {
-            joystick->driver->Update(joystick);
+        if (!joystick->attached) {
+            continue;
+        }
 
-            if (joystick->delayed_guide_button) {
-                SDL_GameControllerHandleDelayedGuideButton(joystick);
-            }
+        joystick->driver->Update(joystick);
+
+        if (joystick->delayed_guide_button) {
+            SDL_GameControllerHandleDelayedGuideButton(joystick);
         }
 
         now = SDL_GetTicks();
@@ -2487,7 +2498,7 @@ SDL_JoystickGUID SDL_CreateJoystickGUID(Uint16 bus, Uint16 vendor, Uint16 produc
     *guid16++ = SDL_SwapLE16(bus);
     *guid16++ = SDL_SwapLE16(crc);
 
-    if (vendor && product) {
+    if (vendor) {
         *guid16++ = SDL_SwapLE16(vendor);
         *guid16++ = 0;
         *guid16++ = SDL_SwapLE16(product);
@@ -2503,7 +2514,9 @@ SDL_JoystickGUID SDL_CreateJoystickGUID(Uint16 bus, Uint16 vendor, Uint16 produc
             guid.data[14] = driver_signature;
             guid.data[15] = driver_data;
         }
-        SDL_strlcpy((char *)guid16, product_name, available_space);
+        if (product_name) {
+            SDL_strlcpy((char *)guid16, product_name, available_space);
+        }
     }
     return guid;
 }
@@ -2833,6 +2846,15 @@ SDL_bool SDL_IsJoystickNintendoSwitchJoyConGrip(Uint16 vendor_id, Uint16 product
 SDL_bool SDL_IsJoystickNintendoSwitchJoyConPair(Uint16 vendor_id, Uint16 product_id)
 {
     return vendor_id == USB_VENDOR_NINTENDO && product_id == USB_PRODUCT_NINTENDO_SWITCH_JOYCON_PAIR;
+}
+
+SDL_bool SDL_IsJoystickSteamVirtualGamepad(Uint16 vendor_id, Uint16 product_id, Uint16 version)
+{
+#ifdef __MACOSX__
+    return (vendor_id == USB_VENDOR_MICROSOFT && product_id == USB_PRODUCT_XBOX360_WIRED_CONTROLLER && version == 0);
+#else
+    return (vendor_id == USB_VENDOR_VALVE && product_id == USB_PRODUCT_STEAM_VIRTUAL_GAMEPAD);
+#endif
 }
 
 SDL_bool SDL_IsJoystickSteamController(Uint16 vendor_id, Uint16 product_id)
