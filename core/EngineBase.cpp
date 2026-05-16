@@ -14,12 +14,41 @@
 #include <chrono>
 #include <filesystem>
 #include <streambuf>
+#include <mutex>
+#include <cmrc/cmrc.hpp>
 
 #include "DEFINES.hpp"
 
 
+    CMRC_DECLARE(vkbase_assets);
+
+    void append_assets(cmrc::embedded_filesystem& fs, const std::string& path)
+    {
+        for (const auto& entry : fs.iterate_directory(path))
+        {
+            std::string entry_path = path.empty() ? entry.filename() : path + "/" + entry.filename();
+            if (entry.is_directory())
+            {
+                append_assets(fs, entry_path);
+            }
+            else
+            {
+                auto file = fs.open(entry_path);
+                vkbase::assets.emplace(entry_path, std::string(file.begin(), file.end()));
+            }
+        }
+    }
+
+    void load_assets()
+    {
+        auto fs = cmrc::vkbase_assets::get_filesystem();
+        append_assets(fs, "");
+    }
+
+
 namespace vkbase
 {
+    std::map<std::string, std::string> assets;
     //describe the render pass
     void createRenderPass();
     //SETUP VULKAN DEVICES
@@ -266,6 +295,7 @@ namespace vkbase
     {
         m_appName = appName;
         redirectOut();//redirect std::cout and std::cerr for handling messages by engine
+        load_assets();
         sys::init();//init system dependent part
         createInstance();//create vulkan instance
         setupDebugMessenger();//setup debugging for vulkan

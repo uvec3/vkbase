@@ -59,36 +59,22 @@ target_link_libraries(
 ## ENGINE ASSETS #
 ##################
 
-#if WINDOWS
+include(${CMAKE_CURRENT_SOURCE_DIR}/../CMake/CMakeRC.cmake)
 
-# This will store all found files
-set(ASSETS_ALL_FILES "")
+cmrc_add_resource_library(vkbase_assets_rc NAMESPACE vkbase_assets)
 
-# Iterate through directories
 foreach(DIR IN LISTS ASSETS)
 	if(EXISTS "${DIR}")
-		file(GLOB_RECURSE DIR_FILES
+		get_filename_component(DIR_PARENT "${DIR}" DIRECTORY)
+		file(GLOB_RECURSE DIR_FILES CONFIGURE_DEPENDS
 				"${DIR}/*"
 		)
-		list(APPEND ASSETS_ALL_FILES ${DIR_FILES})
+		if(DIR_FILES)
+			cmrc_add_resources(vkbase_assets_rc WHENCE "${DIR_PARENT}" ${DIR_FILES})
+		endif()
 	else()
 		message(WARNING "Directory not found: ${DIR}")
 	endif()
 endforeach()
 
-
-
-add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/assets.cpp
-		COMMAND ${CMAKE_COMMAND}
-		"-DASSETS=${ASSETS}"
-		-DDST_FILE=${CMAKE_CURRENT_BINARY_DIR}/assets.cpp
-		-DVAR_NAME=assets
-		-DNAMESPACE=vkbase
-		-P ${CMAKE_CURRENT_SOURCE_DIR}/../CMake/create_assets.cmake
-		COMMENT "creating assets.cpp"
-		WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-		DEPENDS ${ASSETS_ALL_FILES}
-		)
-
-
-target_sources(vkbase_e PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/assets.cpp)
+target_link_libraries(vkbase_e PUBLIC vkbase_assets_rc)
