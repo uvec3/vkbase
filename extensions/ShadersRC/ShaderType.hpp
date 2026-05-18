@@ -3,6 +3,8 @@
 #include <map>
 #include <vector>
 #include <cstdint>
+#include <functional>
+#include <optional>
 
 namespace vkbase::ShadersRC
 {
@@ -16,14 +18,20 @@ namespace vkbase::ShadersRC
     };
 
 
+    // typedef std::string (*FnLoadFile)(const std::string& path);
+    typedef std::function<std::string(const std::string&path)> FnLoadFile;
+
+
     struct CompilationParameters
     {
-        std::string source="";
+        std::string source;
         ShaderType type=ShaderType::Compute;
         std::string fileName="shader.slang";
         std::string entryPointName="main";
         std::map<std::string, std::string> defines;
         std::vector<std::string> includePaths;
+
+        std::optional<FnLoadFile> loadFileFn=std::nullopt;
 
         bool compile_release=false;
         bool compile_debug=false;

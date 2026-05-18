@@ -85,6 +85,36 @@ namespace vkbase::ShadersRC
         return out;
     }
 
+
+    class FilesystemClass: public ISlangFileSystem
+    {
+    private:
+        FnLoadFile m_load;
+    public:
+        SlangResult queryInterface(const SlangUUID& uuid, void** outObject) override{return 0;}
+        uint32_t addRef() override{return 0;};
+        uint32_t release() override{return 0;};
+        void* castAs(const SlangUUID& guid) override {return nullptr;};
+
+        FilesystemClass()=default;
+        FilesystemClass(FnLoadFile load_fn):m_load(load_fn){}
+
+        SlangResult loadFile(const char* path, ISlangBlob** outBlob) override
+        {
+            std::cout<<"Loading file: "<<path<<std::endl;
+            if (!m_load)
+                return SLANG_E_NOT_AVAILABLE;
+            std::string content=m_load(path);
+            if(content.empty())
+                return SLANG_E_NOT_FOUND;
+            ISlangBlob* blob = slang_createBlob(content.data(), content.size());
+            if (!blob)
+                return SLANG_FAIL;
+            *outBlob = blob;
+            return SLANG_OK;
+        }
+    };
+
     std::tuple<std::vector<uint32_t>,std::string> compile_internal(bool debug,CompilationParameters info, const std::string& sourceWithDefines, const Slang::ComPtr<slang::IGlobalSession>& globalSession, SlangStage entryPointStage)
     {
         std::vector<uint32_t> spirv;
@@ -150,6 +180,7 @@ namespace vkbase::ShadersRC
 
 
 
+
         slang::SessionDesc sessionDesc{};
 
         slang::TargetDesc targetDesc{};
@@ -160,6 +191,13 @@ namespace vkbase::ShadersRC
         sessionDesc.compilerOptionEntries = options.data();
         sessionDesc.targets = &targetDesc;
         sessionDesc.targetCount = 1;
+
+        FilesystemClass fs;
+        if (info.loadFileFn.has_value())
+        {
+            fs=FilesystemClass(info.loadFileFn.value());
+            sessionDesc.fileSystem=&fs;
+        }
 
         auto search_paths_view = std::ranges::views::transform(info.includePaths, [](const std::string& path) { return path.c_str(); });
         std::vector<const char*> searchPaths(search_paths_view.begin(), search_paths_view.end());
