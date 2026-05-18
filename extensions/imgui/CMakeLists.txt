@@ -12,7 +12,7 @@ add_library(imgui imgui.hpp imgui.cpp
 		imgui/misc/cpp/imgui_stdlib.cpp)
 
 
-target_link_libraries(imgui PUBLIC ${Vulkan_LIBRARIES})
+target_link_libraries(imgui PUBLIC ${Vulkan_LIBRARIES} vkbase::assets)
 
 
 find_package(TBB)

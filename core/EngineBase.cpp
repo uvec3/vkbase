@@ -15,40 +15,11 @@
 #include <filesystem>
 #include <streambuf>
 #include <mutex>
-#include <cmrc/cmrc.hpp>
-
 #include "DEFINES.hpp"
-
-
-    CMRC_DECLARE(vkbase_assets);
-
-    void append_assets(cmrc::embedded_filesystem& fs, const std::string& path)
-    {
-        for (const auto& entry : fs.iterate_directory(path))
-        {
-            std::string entry_path = path.empty() ? entry.filename() : path + "/" + entry.filename();
-            if (entry.is_directory())
-            {
-                append_assets(fs, entry_path);
-            }
-            else
-            {
-                auto file = fs.open(entry_path);
-                vkbase::assets.emplace(entry_path, std::string(file.begin(), file.end()));
-            }
-        }
-    }
-
-    void load_assets()
-    {
-        auto fs = cmrc::vkbase_assets::get_filesystem();
-        append_assets(fs, "");
-    }
 
 
 namespace vkbase
 {
-    std::map<std::string, std::string> assets;
     //describe the render pass
     void createRenderPass();
     //SETUP VULKAN DEVICES
@@ -295,7 +266,6 @@ namespace vkbase
     {
         m_appName = appName;
         redirectOut();//redirect std::cout and std::cerr for handling messages by engine
-        load_assets();
         sys::init();//init system dependent part
         createInstance();//create vulkan instance
         setupDebugMessenger();//setup debugging for vulkan
@@ -972,6 +942,7 @@ namespace vkbase
             renderPassInfo.renderArea.offset = {0, 0};
             renderPassInfo.renderArea.extent = extent;
 
+            VkClearValue clearValue{};
             if(clearColor.a !=0.f)
             {
                 renderPassInfo.clearValueCount=1;
@@ -985,7 +956,7 @@ namespace vkbase
                 //clearDepth.depth = 1.0f;
                 //clearDepth.stencil = 0;
 
-                VkClearValue clearValue{};
+
                 clearValue.color=pClearColor;
                 renderPassInfo.pClearValues=&clearValue;
             }
@@ -1423,6 +1394,26 @@ namespace vkbase
         return shaderModule;
     }
 
+    VkShaderModule createShaderModule(const std::string_view &code)
+    {
+        if(code.size()%4!=0)
+            throw std::runtime_error("Incorrect spir-v shader code size: "+std::to_string(code.size()));
+
+        VkShaderModuleCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        createInfo.codeSize = code.size();
+        //cast char array to uint32_t array pointer
+        createInfo.pCode = reinterpret_cast<const uint32_t *>(code.data());
+
+        //creating a module
+        VkShaderModule shaderModule;
+        if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS)
+        {
+            throw std::runtime_error("failed to create shader module!");
+        }
+        return shaderModule;
+    }
+
     VkShaderModule createShaderModule(const std::vector<uint32_t> &code)
     {
         VkShaderModuleCreateInfo createInfo{};
@@ -1439,15 +1430,6 @@ namespace vkbase
         return shaderModule;
     }
 
-
-    [[maybe_unused]] VkShaderModule loadPrecompiledShader(const std::string &filename)
-    {
-        auto code_str = assets[filename + ".spv"];
-        std::vector<char> code(code_str.begin(), code_str.end());
-        if (code.empty())
-            throw std::runtime_error("failed to load precompiled shader file: " + filename + ".spv");
-        return createShaderModule(code);
-    }
 
     QueueFamilyIndices findQueueFamilies(VkPhysicalDevice physDevice)
     {
@@ -1758,16 +1740,6 @@ namespace vkbase
     void waitForRenderEnd(uint64_t timeout)
     {
         vkWaitForFences(device, fenceRenderFinished.size(), fenceRenderFinished.data(), VK_TRUE, timeout);
-    }
-
-    auto assetsFrom(const std::string& path)
-    {
-        auto generic= std::filesystem::path(path).generic_string();
-        std::string path_begin = generic+'/';
-        std::string path_end = generic+ static_cast<char>('/' + 1);
-        auto begin = assets.lower_bound(path_begin);
-        auto end = assets.upper_bound(path_end);
-        return std::ranges::subrange(begin,end);
     }
 
     OnDataUpdateReceiver::OnDataUpdateReceiver(): AbstractEventReceiver<uint32_t>{onDrawPrepareEvent, WRAP_MEMBER_FUNC(onUpdateData)}{}

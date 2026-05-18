@@ -6,6 +6,8 @@
 #include <iostream>
 
 #include <execution>
+
+#include "../Assets/assets.h"
 // dear imgui: Renderer Backend for Vulkan
 // This needs to be used along with a Platform Backend (e.g. GLFW, SDL, Win32, custom..)
 
@@ -2484,11 +2486,10 @@ namespace vkbase::imgui
             for (auto& [font_size, f]:fonts_by_name)
             {
                 const std::string asset_key = std::string("Fonts/") + font_name+".ttf";
-                auto a_it = vkbase::assets.find(asset_key);
+                auto font_binary=vkbase::assets::get(asset_key);
                 ImFont *added;
-                if(a_it != vkbase::assets.end())
+                if(!font_binary.empty())
                 {
-                    std::string &font_binary = a_it->second;
                     if(font_binary.empty())
                     {
                         std::cerr << "[processPendingFonts] Asset empty: " << asset_key << "\n";

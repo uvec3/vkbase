@@ -7,8 +7,10 @@ message(STATUS "VKBASE_SHADER_RUNTIME_COMPILE: ${VKBASE_SHADER_RUNTIME_COMPILE}"
 
 
 #add engine base library
-add_subdirectory(backends/SDL_backend)
+
 add_subdirectory(core)
+add_subdirectory(extensions/Assets)
+add_subdirectory(backends/SDL_backend)
 add_subdirectory(extensions/imgui)
 add_subdirectory(extensions/Buffer)
 add_subdirectory(extensions/ShadersRC)

@@ -40,9 +40,6 @@ namespace vkbase
         globalTaskManager.runTask(std::forward<TaskFunc>(task), std::forward<FinisherFunc>(taskFinisher));
     }
 
-
-
-    extern std::map<std::string, std::string> assets;
     extern VkInstance instance;
 
     extern VkDevice device;
@@ -78,8 +75,8 @@ namespace vkbase
     [[maybe_unused]] VkShaderModule createShaderModule(const std::vector<char> &code);
     //create shader module from binary code(uint32_t array)
     [[maybe_unused]] VkShaderModule createShaderModule(const std::vector<uint32_t> &code);
-    //read shader file using ISysRes interface
-    [[maybe_unused]] VkShaderModule loadPrecompiledShader(const std::string &filename);
+    //create shader module from binary code (string_view)
+    VkShaderModule createShaderModule(const std::string_view &code);
     //retrieve device name
     std::string getDeviceName(VkPhysicalDevice physicalDevice);
     int addInitCallback(const std::function<void()>& callback, int priority= 0);
@@ -108,8 +105,6 @@ namespace vkbase
     void info(const std::string& str);
     void error(const std::string& str);
     void warning(const std::string& str);
-
-    auto assetsFrom(const std::string& path);
 
     VkCommandBufferInheritanceInfo createMainBufferInheritanceInfo(uint32_t imageIndex);
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties, VkMemoryHeapFlags heapFlags);
