@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 project(vkbase)
 
-add_subdirectory(SDL)
+add_subdirectory(SDL EXCLUDE_FROM_ALL)
 find_package(Vulkan REQUIRED)
 
 add_library(SDL_backend_core SDL_backend.cpp )

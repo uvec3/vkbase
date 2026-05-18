@@ -15,7 +15,7 @@ add_library(imgui imgui.hpp imgui.cpp
 target_link_libraries(imgui PUBLIC ${Vulkan_LIBRARIES} vkbase::assets)
 
 
-find_package(TBB)
+find_package(TBB QUIET)
 if(TBB_FOUND)
 	target_link_libraries(imgui PRIVATE TBB::tbb)
 endif()
