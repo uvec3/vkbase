@@ -40,7 +40,7 @@ void ParallelTaskManager::terminateAll()
 {
     for(auto& task:running_tasks)
     {
-        //task->thread.request_stop();
+        task->thread.request_stop();
         task->thread.join();
         task->callDetachAction();
     }
@@ -48,7 +48,6 @@ void ParallelTaskManager::terminateAll()
 
     for (auto& task:detached_tasks)
     {
-        //task->thread.request_stop();
         task->thread.join();
         task->callDetachAction();
     }
@@ -71,7 +70,6 @@ void ParallelTaskManager::detachAll()
 
             for (auto& task:detached_tasks)
             {
-                task->thread.request_stop();
                 task->thread.join();
                 task->callDetachAction();
             }

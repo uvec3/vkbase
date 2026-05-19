@@ -8,7 +8,6 @@
 #include <stdexcept>
 #include <utility>
 
-
 #include "Event.hpp"
 #include "../extensions/ShadersRC/slang/slang/external/unordered_dense/include/ankerl/unordered_dense.h"
 
@@ -80,7 +79,7 @@ struct IQueuedTask
 template<typename T>
 struct QueuedTask:IQueuedTask
 {
-    std::move_only_function<T()> task;
+    std::move_only_function<T(std::stop_token stop_token)> task;
     std::move_only_function<void(T)> taskFinisher;
     std::move_only_function<void(T)> detachAction;
 
@@ -88,13 +87,12 @@ struct QueuedTask:IQueuedTask
     {
         ++runningThreads;
         auto running_task=std::make_unique<RunningTask<T>>();
-        auto fn_local = std::move(task);
         running_task->finisher=std::move(taskFinisher);
         running_task->detachAction=std::move(detachAction);
         running_task->thread = std::jthread(
-            [&runningThreads,task_ptr=running_task.get(),fn=std::move(fn_local)]() mutable
+            [&runningThreads,task_ptr=running_task.get(),fn=std::move(task)](std::stop_token stop_token) mutable
         {
-            task_ptr->data = fn();
+            task_ptr->data = fn(stop_token);
             task_ptr->finished=true;
         });
 
@@ -134,20 +132,40 @@ public:
             acceptThreads=maxThreads;
     }
 
+    //get result type of task function, in all cases with stop_token or without
+    template <typename F>
+    using task_result_t =
+        typename decltype([]{
+            if constexpr (std::is_invocable_v<F, std::stop_token>)
+                return std::type_identity<std::invoke_result_t<F, std::stop_token>>{};
+            else
+                return std::type_identity<std::invoke_result_t<F>>{};
+        }())::type;
+
     template<typename TaskFunc, typename FinisherFunc>
     void runTask(TaskFunc&& task, FinisherFunc&& taskFinisher)
     {
-        using T = std::invoke_result_t<TaskFunc>;
+        using T = task_result_t<TaskFunc>;
         runTask(std::forward<TaskFunc>(task), std::forward<FinisherFunc>(taskFinisher), [](T){});
     }
 
     template<typename TaskFunc, typename FinisherFunc,typename DetachAction>
     void runTask(TaskFunc&& task, FinisherFunc&& taskFinisher, DetachAction&& detachAction)
     {
-        using T = std::invoke_result_t<TaskFunc>;
+        using T = task_result_t<TaskFunc>;
 
         auto new_task = std::make_unique<QueuedTask<T>>();
-        new_task->task = std::forward<TaskFunc>(task);
+
+        if constexpr (std::is_assignable_v<std::move_only_function<T(std::stop_token)>,TaskFunc&&>)
+        {
+            new_task->task = std::forward<TaskFunc>(task);
+        }
+        else
+        {
+            std::move_only_function<T(std::stop_token)> tw = [t=std::forward<TaskFunc>(task)](std::stop_token){return t();};
+            new_task->task = std::move(tw);
+        }
+
         new_task->taskFinisher = std::forward<FinisherFunc>(taskFinisher);
         new_task->detachAction = std::forward<DetachAction>(detachAction);
 
@@ -155,6 +173,7 @@ public:
         {
             if(running_tasks.size() == acceptThreads)
             {
+                running_tasks.back()->thread.request_stop();
                 detached_tasks.push_back(std::move(running_tasks.back()));
                 running_tasks.pop_back();
             }
@@ -172,7 +191,6 @@ public:
     }
 
     void finish();
-
     void terminateAll();
     void detachAll();
     int get_treads_running();
@@ -187,7 +205,7 @@ public:
         return running_tasks.empty()&&detached_tasks.empty();
     }
 
-    bool free() const
+    bool isFree() const
     {
         return running_tasks.empty();
     }
