@@ -58,6 +58,7 @@ namespace vkbase
     protected:
         int overflow(int c) override
         {
+            std::lock_guard<std::mutex> bufferLock(bufferMutex);
             if (traits_type::eq_int_type(c, traits_type::eof()))
                 return sync() == 0 ? traits_type::not_eof(c) : traits_type::eof();
 
@@ -69,6 +70,7 @@ namespace vkbase
 
         std::streamsize xsputn(const char* s, std::streamsize count) override
         {
+            std::lock_guard<std::mutex> bufferLock(bufferMutex);
             std::string_view view{s, static_cast<size_t>(count)};
             size_t start = 0;
 
@@ -110,6 +112,7 @@ namespace vkbase
 
         Sink sink;
         std::string buffer;
+        std::mutex bufferMutex;
     } infoStream(info_internal), errorStream(error_internal);
 
     std::streambuf* oldCoutStreamBuf = nullptr;

@@ -12,10 +12,10 @@ namespace vkbase::imgui
 
     void Log::clear()
     {
-        mutex.lock();
+        m.lock();
         lines.clear();
         content.clear();
-        mutex.unlock();
+        m.unlock();
     }
 
     void Log::draw(bool* show)
@@ -42,7 +42,7 @@ namespace vkbase::imgui
 
     void Log::add(const std::string_view &str, glm::vec4 color)
     {
-        mutex.lock();
+        m.lock();
         if(colors.empty() || colors.back().color!=color)
             colors.push_back({.posStart= content.size(),.color= color});
         if(lines.empty())
@@ -54,12 +54,18 @@ namespace vkbase::imgui
             lines.push_back(strBegin + start + 1);
         }
         content+=str;
-        mutex.unlock();
+        m.unlock();
     }
 
     std::string Log::getName() const
     {
         return name;
+    }
+
+    std::string Log::getContent()
+    {
+        std::lock_guard<std::mutex> lock(m);
+        return content;
     }
 
     void Log::setName(const std::string &string)
@@ -86,11 +92,13 @@ namespace vkbase::imgui
         {
             if (ImGui::Selectable("Clear"))
                 clear();
+
             if (ImGui::Selectable("Copy"))
                 ImGui::SetClipboardText(content.c_str());
             ImGui::EndPopup();
         }
 
+        std::lock_guard<std::mutex> lock(m);
         ImGuiListClipper clipper;
         clipper.Begin(static_cast<int>(lines.size()));
 

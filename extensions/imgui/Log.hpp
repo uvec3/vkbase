@@ -13,7 +13,6 @@ namespace vkbase::imgui
     {
     public:
 
-
         struct TextColor
         {
             uint64_t posStart;
@@ -21,24 +20,22 @@ namespace vkbase::imgui
         };
 
         explicit Log(const char *name = "Log");
-
-        std::vector<uint64_t> lines;
-        std::vector<TextColor> colors;
-        std::string content;
-        std::mutex mutex;
-
         void clear();
 
         void draw(bool* show);
         void draw_as_child();
-
         void add(const std::string_view &str, glm::vec4 color=glm::vec4(-1));
         std::string getName() const;
-
+        std::string getContent();
         void setName(const std::string & string);
 
     private:
         std::string name = "Log";
+        std::vector<uint64_t> lines;
+        std::vector<TextColor> colors;
+        std::string content;
+        std::mutex m;
+
         void draw_internal();
     };
 
