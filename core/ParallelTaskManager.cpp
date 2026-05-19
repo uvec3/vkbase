@@ -7,6 +7,7 @@ void ParallelTaskManager::finish()
     while(!running_tasks.empty()&&running_tasks.back()->finished.load())
     {
         running_tasks.back()->thread.join();
+        --runningThreads;
         running_tasks.back()->callFinisher();
         running_tasks.pop_back();
 
@@ -23,6 +24,7 @@ void ParallelTaskManager::finish()
             if ((*it)->finished.load())
             {
                 (*it)->thread.join();
+                --runningThreads;
                 (*it)->callDetachAction();
                 it = detached_tasks.erase(it);
             }
@@ -51,6 +53,7 @@ void ParallelTaskManager::terminateAll()
         task->callDetachAction();
     }
     detached_tasks.clear();
+    runningThreads=0;
 }
 
 void ParallelTaskManager::detachAll()
@@ -76,6 +79,7 @@ void ParallelTaskManager::detachAll()
             return true;
         },[](const auto&){});
     }
+    runningThreads=0;
 }
 
 int ParallelTaskManager::get_treads_running()

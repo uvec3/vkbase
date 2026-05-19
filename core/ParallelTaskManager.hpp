@@ -55,6 +55,14 @@ struct RunningTask:IRunningTask
         std::cout<<"RunningTask created\n";
     }
 
+    //delete copy and move constructors and assignment operators
+    RunningTask(const RunningTask&) = delete;
+    RunningTask& operator=(const RunningTask&) = delete;
+    RunningTask(RunningTask&&) = delete;
+    RunningTask& operator=(RunningTask&&) = delete;
+
+
+
     ~RunningTask() override
     {
         if (thread.joinable())
@@ -80,46 +88,21 @@ struct QueuedTask:IQueuedTask
     {
         ++runningThreads;
         auto running_task=std::make_unique<RunningTask<T>>();
-        running_task->thread = std::jthread([&,task=running_task.get(),fn=std::move(task)]() mutable
-        {
-            task->data = fn();
-            --runningThreads;
-            task->finished=true;
-        }
-            );
+        auto fn_local = std::move(task);
         running_task->finisher=std::move(taskFinisher);
         running_task->detachAction=std::move(detachAction);
+        running_task->thread = std::jthread(
+            [&runningThreads,task_ptr=running_task.get(),fn=std::move(fn_local)]() mutable
+        {
+            task_ptr->data = fn();
+            task_ptr->finished=true;
+        });
+
 
         return running_task;
     };
 };
 
-/**
- * @brief A small thread pool / task manager for running background tasks that
- * produce a value of type T and later call a finisher on the main thread.
- *
- * Contract:
- * - runTask() accepts two callables: a background producer returning T and a
- *   finisher receiving T which is executed after the background thread joins.
- * - finish() joins completed tasks from the back of the queue and invokes
- *   their finisher callbacks in the calling thread.
- *
- * Parameters:
- * - maxThreads: maximum number of concurrent background threads.
- * - acceptThreads: number of enqueued-but-not-yet-joined tasks that allowed to be finished
- *  if more then acceptThreads tasks added they will replace last element in the queue
- *  thus queue will never grow bigger than acceptThreads though number of threads still running can reach up to
- *  maxThreads limit only acceptThreads of them can be actually finished
- *
- * Error modes:
- * - constructor throws std::runtime_error if acceptThreads > maxThreads.
- *
- * Thread-safety and usage notes:
- * - The manager uses atomic counters/flags for simple synchronization but does
- *   not provide full concurrent modification safety for the task deque; the
- *   current usage pattern assumes a single producer (caller of runTask) and a
- *   single consumer (caller of finish / destructor).
- */
 
 
 class ParallelTaskManager
