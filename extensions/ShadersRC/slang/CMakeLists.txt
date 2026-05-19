@@ -42,6 +42,8 @@ set(SLANG_ENABLE_SLANGRT OFF CACHE BOOL "" FORCE)
 set(SLANG_ENABLE_REPLAYER OFF CACHE BOOL "" FORCE)
 set(SLANG_ENABLE_SLANG_RHI OFF CACHE BOOL "" FORCE)
 
+set(SLANG_ENABLE_SPIRV_TOOLS_MIMALLOC OFF CACHE BOOL "" FORCE)
+
 add_subdirectory(slang)
 
 target_link_libraries(ShadersSlang PUBLIC slang SPIRV-Tools-opt SPIRV-Tools-static Boost::regex)
