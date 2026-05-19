@@ -198,51 +198,7 @@ namespace vkbase
     VmaAllocator vma;
 
 
-    void info_internal(const char* str, int len)
-    {
-        sys::info(str,len);
-        onMessage.call(std::string_view(str,len),MessageType::Info);
-    }
 
-    void error_internal(const char* str, int len)
-    {
-        sys::error(str,len);
-        onMessage.call(std::string_view(str,len),MessageType::Error);
-    }
-
-    void warning_internal(const char* str, int len)
-    {
-        sys::warning(str,len);
-        onMessage.call(std::string_view(str,len),MessageType::Warning);
-    }
-
-    class InfoStream: public std::basic_streambuf<char>
-    {
-    public:
-        int overflow(int c) override
-        {
-            info_internal(reinterpret_cast<const char *>(&c), 1);
-            return c;
-        }
-    } infoStream;
-
-    class ErrorStream: public std::basic_streambuf<char>
-    {
-    public:
-        int overflow(int c) override
-        {
-            error_internal(reinterpret_cast<const char *>(&c), 1);
-            return c;
-        }
-    } errorStream;
-    
-    inline void redirectOut()
-    {
-        std::cout.rdbuf(&infoStream);
-        std::cerr.rdbuf(&errorStream);
-        //std::cout.set_rdbuf(&infoStream);
-        //std::cerr.set_rdbuf(&errorStream);
-    }
 
     void addDeviseExtension(const char* extension)
     {
@@ -261,6 +217,8 @@ namespace vkbase
         vmaCreateAllocator(&allocatorCreateInfo, &vma);
     }
 
+    void redirectOut();
+    void restoreOut();
 
     int init(const std::string &appName)
     {
@@ -1546,6 +1504,7 @@ namespace vkbase
         vkDestroyInstance(instance, nullptr);
 
         sys::destroy();
+        restoreOut();
 
         return 0;
     }
@@ -1640,23 +1599,7 @@ namespace vkbase
         onMessage.removeCallback(id);
     }
 
-    void info(const std::string &str)
-    {
-        info_internal(str.c_str(),static_cast<int>(str.size()));
-        info_internal("\n",1);
-    }
 
-    void error(const std::string &str)
-    {
-        error_internal(str.c_str(), static_cast<int>(str.size()));
-        error_internal("\n",1);
-    }
-
-    void warning(const std::string &str)
-    {
-        warning_internal(str.c_str(), static_cast<int>(str.size()));
-        warning_internal("\n",1);
-    }
 
     bool handleEvents()
     {

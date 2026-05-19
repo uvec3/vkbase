@@ -12,8 +12,6 @@ else()
 #	list(APPEND PLATFORM_DEPEND_SOURCES ../include/VKBASE/platform-dependent/SysResGLFW.cpp)
 endif()
 
-
-
 #################
 ### FIND LIBS ###
 #################
@@ -25,7 +23,7 @@ find_package(Vulkan REQUIRED)
 ### TARGET ###
 ##############
 
-add_library(vkbase_e  EngineBase.cpp ParallelTaskManager.cpp
+add_library(vkbase_e  EngineBase.cpp ParallelTaskManager.cpp messages.cpp
 		${PLATFORM_DEPEND_SOURCES})
 
 
