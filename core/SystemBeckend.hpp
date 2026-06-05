@@ -3,7 +3,7 @@
 #include <string>
 #include <vulkan/vulkan.h>
 #include <queue>
-#include "glm/glm/glm.hpp"
+#include "glm/glm.hpp"
 
 
 namespace vkbase::sys

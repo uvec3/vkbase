@@ -36,7 +36,6 @@ target_include_directories(
 		PUBLIC ${Vulkan_INCLUDE_DIRS}
 		PUBLIC ${Vulkan_INCLUDE_DIRS}/../Third-Party/Include
 		PUBLIC ../include
-		PUBLIC ../external/glm
 		PUBLIC ../external/imgui
 		PUBLIC ../external/imgui/backends
 )

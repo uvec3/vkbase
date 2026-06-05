@@ -4,7 +4,7 @@
 #include <vector>
 #include <array>
 #include <vulkan/vulkan.h>
-#include "glm/glm/glm.hpp"
+#include "glm/glm.hpp"
 
 
 
