@@ -4,13 +4,14 @@
 #include <map>
 #include <vector>
 
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 #include <vma/vk_mem_alloc.h>
 
 #include "DEFINES.hpp"
 #include "SystemBeckend.hpp"
 #include "EngineParams.hpp"
 #include "ParallelTaskManager.hpp"
+#include "Event.hpp"
 
 namespace vkbase
 {
@@ -42,7 +43,7 @@ namespace vkbase
 
     extern VkInstance instance;
 
-    extern VkDevice device;
+    extern vk::Device device;
     extern VkPhysicalDevice physicalDevice;
 
     extern VmaAllocator vma;
@@ -93,11 +94,13 @@ namespace vkbase
     int addTouchHandler(const std::function<void(const sys::TouchEvent&)>& callback, int priority= 0);
     int addSurfaceChangedHandler(const std::function<void()>& callback, int priority= 0);
     int addMessagesListener(const std::function<void(std::string_view,MessageType)>& listener,int priority=0);
+    int addWriteBeforeRenderBufferCallback(const std::function<void(VkCommandBuffer, uint32_t)>& callback, int priority= 0);
     void removeInitCallback(int id);
     void removeDestroyCallback(int id);
     void removeDrawPrepareCallback(int id);
     void removeRewriteBuffersCallback(int id);
     void removeWriteMainBufferCallback(int id);
+    void removeWriteBeforeRenderBufferCallback(int id);
     void removeTouchHandler(int id);
     void removeSurfaceChangedHandler(int id);
     void removeMessagesListener(int id);

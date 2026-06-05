@@ -212,14 +212,14 @@ public:
 };
 
 
-class AutoParallelTaskManager:public ParallelTaskManager,public vkbase::OnLogicUpdateReceiver
+class AutoParallelTaskManager:public ParallelTaskManager,public vkbase::OnSyncReceiver
 {
 public:
     explicit AutoParallelTaskManager(int maxThreads=1,int queue_size=1, bool only_finish_last=false ,int priority=0):
     ParallelTaskManager(maxThreads,queue_size,only_finish_last)
     {
-        vkbase::OnLogicUpdateReceiver::disable();
-        vkbase::OnLogicUpdateReceiver::setPriority(priority);
+        vkbase::OnSyncReceiver::disable();
+        vkbase::OnSyncReceiver::setPriority(priority);
     }
 
     template<typename TaskFunc, typename FinisherFunc>
@@ -227,7 +227,7 @@ public:
     {
         ParallelTaskManager::runTask(std::forward<TaskFunc>(task), std::forward<FinisherFunc>(taskFinisher));
         if(! this->running_tasks.empty())
-            vkbase::OnLogicUpdateReceiver::enable();
+            vkbase::OnSyncReceiver::enable();
     }
 
 protected:
@@ -235,6 +235,6 @@ protected:
     {
         this->finish();
         if(this->running_tasks.empty())
-            vkbase::OnLogicUpdateReceiver::disable();
+            vkbase::OnSyncReceiver::disable();
     }
 };

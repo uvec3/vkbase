@@ -86,10 +86,11 @@ namespace vkbase
     Event<> onDestroyEvent;
     Event<uint32_t> onDrawPrepareEvent;
     Event<uint32_t> onDeviceSyncEvent;
+    Event<VkCommandBuffer, uint32_t> onWriteBeforeRenderBufferEvent;
     Event<VkCommandBuffer, uint32_t> onWriteMainBufferEvent;
     Event<const sys::TouchEvent&> onTouchEvent;
     Event<> onSurfaceChangedEvent;
-    Event<std::string_view, MessageType> onMessage;
+    Event<std::string_view, MessageType> onMessageEvent;
 
     GlobalAutoParallelTaskManager globalTaskManager;
 
@@ -134,7 +135,7 @@ namespace vkbase
     // Physical device handle
     VkPhysicalDevice physicalDevice{VK_NULL_HANDLE};
     //logical device
-    VkDevice device{VK_NULL_HANDLE};
+    vk::Device device{VK_NULL_HANDLE};
     //Device properties
     VkPhysicalDeviceProperties physicalDeviceProperties{};
     //queue family indices
@@ -491,15 +492,18 @@ namespace vkbase
             createInfo.enabledLayerCount = 0;
         }
 
+        VkDevice device_handle;
         auto err=vkCreateDevice(physicalDevice,//physical device to create logical device for
                                 &createInfo,
                                 nullptr,
-                                &device/*out handle*/);
+                                &device_handle/*out handle*/);
         //error handling
         if (err != VK_SUCCESS)
         {
             throw std::runtime_error("failed to create logical device! "+std::to_string(err));
         }
+
+        device=device_handle;
 
         //get queue handles of logical device
         vkGetDeviceQueue(device,//logical device on which queues are created
@@ -514,6 +518,11 @@ namespace vkbase
         //get timestamp period
 
         timestampPeriod = physicalDeviceProperties.limits.timestampPeriod;
+    }
+
+    void removeRewriteBuffersCallback(int id)
+    {
+        onDeviceSyncEvent.removeCallback(id);
     }
 
     //SETUP SWAP CHAIN
@@ -889,6 +898,9 @@ namespace vkbase
         }
         // record commands
         {
+            onWriteBeforeRenderBufferEvent.call(cb,imageIndex);
+
+
             //render pass
             VkRenderPassBeginInfo renderPassInfo{};
             renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -1561,7 +1573,12 @@ namespace vkbase
 
     int addMessagesListener(const std::function<void(std::string_view, MessageType)> &listener, int priority)
     {
-        return onMessage.addCallback(listener, priority);
+        return onMessageEvent.addCallback(listener, priority);
+    }
+
+    int addWriteBeforeRenderBufferCallback(const std::function<void(VkCommandBuffer, uint32_t)> &callback, int priority)
+    {
+        return onWriteBeforeRenderBufferEvent.addCallback(callback, priority);
     }
 
     void removeInitCallback(int id)
@@ -1596,7 +1613,12 @@ namespace vkbase
 
     void removeMessagesListener(int id)
     {
-        onMessage.removeCallback(id);
+        onMessageEvent.removeCallback(id);
+    }
+
+    void removeWriteBeforeRenderBufferCallback(int id)
+    {
+        onWriteBeforeRenderBufferEvent.removeCallback(id);
     }
 
 
@@ -1685,11 +1707,19 @@ namespace vkbase
         vkWaitForFences(device, fenceRenderFinished.size(), fenceRenderFinished.data(), VK_TRUE, timeout);
     }
 
-    OnDataUpdateReceiver::OnDataUpdateReceiver(): AbstractEventReceiver<uint32_t>{onDrawPrepareEvent, WRAP_MEMBER_FUNC(onUpdateData)}{}
+    OnPrepareReceiver::OnPrepareReceiver(): AbstractEventReceiver<uint32_t>{onDrawPrepareEvent, WRAP_MEMBER_FUNC(onUpdateData)}{}
 
-    OnLogicUpdateReceiver::OnLogicUpdateReceiver(): AbstractEventReceiver<uint32_t>{onDeviceSyncEvent, WRAP_MEMBER_FUNC(onUpdateLogic)}{}
+    OnSyncReceiver::OnSyncReceiver(): AbstractEventReceiver<uint32_t>{onDeviceSyncEvent, WRAP_MEMBER_FUNC(onUpdateLogic)}{}
 
     OnSurfaceChangedReceiver::OnSurfaceChangedReceiver() : AbstractEventReceiver<>{onSurfaceChangedEvent, WRAP_MEMBER_FUNC(onSurfaceChanged)}{}
 
     OnCleanupReceiver::OnCleanupReceiver(): AbstractEventReceiver<>{onDestroyEvent, WRAP_MEMBER_FUNC(onCleanup)}{}
+
+    OnInitReceiver::OnInitReceiver(): AbstractEventReceiver<>{onInitEvent, WRAP_MEMBER_FUNC(onInit)}{}
+
+    OnWriteBeforeRenderBufferReceiver::OnWriteBeforeRenderBufferReceiver(): AbstractEventReceiver<VkCommandBuffer, uint32_t>{onWriteBeforeRenderBufferEvent, WRAP_MEMBER_FUNC(onWriteBeforeRenderBuffer)}{}
+
+    OnWriteMainBufferReceiver::OnWriteMainBufferReceiver(): AbstractEventReceiver<VkCommandBuffer, uint32_t>{onWriteMainBufferEvent, WRAP_MEMBER_FUNC(onWriteMainBuffer)}{}
+
+    OnMessageReceiver::OnMessageReceiver(): AbstractEventReceiver<std::string_view, MessageType>{onMessageEvent, WRAP_MEMBER_FUNC(onMessage)}{}
 }

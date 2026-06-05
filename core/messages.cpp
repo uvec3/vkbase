@@ -6,25 +6,25 @@
 
 namespace vkbase
 {
-    extern Event<std::string_view, MessageType> onMessage;
+    extern Event<std::string_view, MessageType> onMessageEvent;
     std::recursive_mutex streamMutex;
 
     void info_internal(const char* str, int len)
     {
         sys::info(str,len);
-        onMessage.call(std::string_view(str,len),MessageType::Info);
+        onMessageEvent.call(std::string_view(str,len),MessageType::Info);
     }
 
     void error_internal(const char* str, int len)
     {
         sys::error(str,len);
-        onMessage.call(std::string_view(str,len),MessageType::Error);
+        onMessageEvent.call(std::string_view(str,len),MessageType::Error);
     }
 
     void warning_internal(const char* str, int len)
     {
         sys::warning(str,len);
-        onMessage.call(std::string_view(str,len),MessageType::Warning);
+        onMessageEvent.call(std::string_view(str,len),MessageType::Warning);
     }
 
     void info(const std::string &str)

@@ -2,8 +2,11 @@
 #include <functional>
 #include <algorithm>
 #include <map>
+#include <vulkan/vulkan.h>
 namespace vkbase
 {
+    enum class MessageType;
+
     template<typename... Args>
     struct Callback
     {
@@ -116,18 +119,18 @@ namespace vkbase
 
 
 
-    class OnDataUpdateReceiver: public AbstractEventReceiver<uint32_t>
+    class OnPrepareReceiver: public AbstractEventReceiver<uint32_t>
     {
     public:
-        OnDataUpdateReceiver();
+        OnPrepareReceiver();
     protected:
         virtual void onUpdateData(uint32_t imageIndex)=0;
     };
 
-    class OnLogicUpdateReceiver: public AbstractEventReceiver<uint32_t>
+    class OnSyncReceiver: public AbstractEventReceiver<uint32_t>
     {
     public:
-        OnLogicUpdateReceiver();
+        OnSyncReceiver();
     protected:
         virtual void onUpdateLogic(uint32_t imageIndex)=0;
     };
@@ -147,4 +150,38 @@ namespace vkbase
     protected:
         virtual void onCleanup()=0;
     };
+
+    class OnInitReceiver: public AbstractEventReceiver<>
+    {
+    public:
+        OnInitReceiver();
+    protected:
+        virtual void onInit()=0;
+    };
+
+    class OnWriteBeforeRenderBufferReceiver: public AbstractEventReceiver<VkCommandBuffer, uint32_t>
+    {
+    public:
+        OnWriteBeforeRenderBufferReceiver();
+    protected:
+        virtual void onWriteBeforeRenderBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex)=0;
+    };
+
+    class OnWriteMainBufferReceiver: public AbstractEventReceiver<VkCommandBuffer, uint32_t>
+    {
+    public:
+        OnWriteMainBufferReceiver();
+    protected:
+        virtual void onWriteMainBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex)=0;
+    };
+
+
+    class OnMessageReceiver: public AbstractEventReceiver<std::string_view, MessageType>
+    {
+    public:
+        OnMessageReceiver();
+    protected:
+        virtual void onMessage(std::string_view message, MessageType messageType)=0;
+    };
+
 }
