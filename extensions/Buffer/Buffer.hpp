@@ -8,52 +8,39 @@ namespace vkbase
     class Buffer
     {
     public:
-        struct BufferAttributes
+
+        Buffer()=default;
+        Buffer (Buffer& other)=delete;
+        Buffer (Buffer&& other)noexcept;
+        explicit Buffer(VkDeviceSize size,VkBufferUsageFlags usage=VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                        VmaAllocationCreateFlags flags=0,const std::vector<uint32_t>& queue_families={});
+        ~Buffer();
+
+        Buffer& operator=(const Buffer& other)=delete;
+        Buffer& operator=(Buffer&& other);
+
+
+        operator VkBuffer() const
         {
-            //size in bytes
-            uint32_t size;
-            //flags_bit //VK_BUFFER_USAGE_....
-            VkBufferUsageFlags usage;
-            //memory_property_flags //VK_MEMORY_PROPERTY_....
-            VkMemoryPropertyFlags memProperties;
-            //memory_heap_flags //VK_MEMORY_HEAP_....
-            VkMemoryHeapFlags heapFlags;
-        };
-
-
-        BufferAttributes info;
-
-        //buffer itself
-        VkBuffer buffer{VK_NULL_HANDLE};
-        //buffer memory
-        VkDeviceMemory bufferMemory{VK_NULL_HANDLE };
-
-
-
-        //create
-        void create (const BufferAttributes& bufferAttributes);
-        //create wrapper
-        void create ( uint32_t size, VkBufferUsageFlags usage, VkMemoryPropertyFlags memProperties, VkMemoryHeapFlags heapFlags = 0) ;
-
-        //open buffer for reading from host and get pointer to memory
-        void* map();
-        //unmap memory
-        void unmap();
-
-        //for implicit conversion to VkBuffer
-        inline operator VkBuffer()
-        {
-            return buffer;
+            return get();
         }
 
-        VkCommandBuffer createCommandForCopy(VkBuffer dstBuffer, uint32_t copySize);
+        char* map();
+        void unmap();
+        void copy_to_buffer_cmd(VkCommandBuffer cmd, const Buffer& dst_buffer, VkDeviceSize copy_size=0, VkDeviceSize src_offset=0, VkDeviceSize dst_offset=0);
+        void copy_to_buffer(const Buffer& dst_buffer, VkDeviceSize copy_size=0, VkDeviceSize src_offset=0, VkDeviceSize dst_offset=0);
+        [[nodiscard]] VkDeviceSize size() const;
+        VkBuffer get() const;
+        [[nodiscard]] VkMemoryPropertyFlags getMemoryPropertyFlags() const;
+        [[nodiscard]] bool isDeviceLocal() const;
+        [[nodiscard]] VkMemoryRequirements getBufferMemoryRequirements() const;
+        std::string print_as_uint32_array(const std::string& name);
 
-        //copy data to buffer
-        bool copyTo(VkBuffer dstBuffer, uint32_t copySize);
 
-        void destroy();
-
-        void* data=nullptr;
+    private:
+        VkBuffer buffer=VK_NULL_HANDLE;
+        VmaAllocation allocation=VK_NULL_HANDLE;
+        VmaAllocationInfo info{};
+        VkDeviceSize m_size;
     };
-
 }
