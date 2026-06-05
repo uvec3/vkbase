@@ -12,12 +12,14 @@
 #include "SPIRV-Reflect/spirv_reflect.h"
 #include <ranges>
 
-namespace vkbase::ShadersRC
+namespace vkbase::rc
 {
     struct SPIRVReflection
     {
         SpvReflectShaderModule module;
         std::vector<SpvReflectDescriptorBinding *> descriptorBindings;
+        std::vector<SpvReflectInterfaceVariable *> inputVariables;
+        std::vector<SpvReflectInterfaceVariable *> outputVariables;
         std::vector<SpvReflectDescriptorSet *> descriptorSets;
         std::vector<SpvReflectUserType> userTypes;
 
@@ -45,6 +47,19 @@ namespace vkbase::ShadersRC
             descriptorSets.resize(var_count);
             result = spvReflectEnumerateDescriptorSets(&module, &var_count, descriptorSets.data());
             assert(result == SPV_REFLECT_RESULT_SUCCESS);
+
+            result = spvReflectEnumerateInputVariables(&module, &var_count, nullptr);
+            assert(result == SPV_REFLECT_RESULT_SUCCESS);
+            inputVariables.resize(var_count);
+            result = spvReflectEnumerateInputVariables(&module, &var_count, inputVariables.data());
+            assert(result == SPV_REFLECT_RESULT_SUCCESS);
+
+            result = spvReflectEnumerateOutputVariables(&module, &var_count, nullptr);
+            assert(result == SPV_REFLECT_RESULT_SUCCESS);
+            outputVariables.resize(var_count);
+            result = spvReflectEnumerateOutputVariables(&module, &var_count, outputVariables.data());
+            assert(result == SPV_REFLECT_RESULT_SUCCESS);
+
         }
 
         ~SPIRVReflection()
@@ -57,6 +72,7 @@ namespace vkbase::ShadersRC
     std::string spirv_to_text(const std::vector<uint32_t> &spirv_code, bool for_print=false);
     std::vector<uint32_t> text_to_spirv(const std::string &text);
     std::vector<uint32_t> optimize_spirv(const std::vector<uint32_t> &spirv_code);
+    Spirv compile_glsl(const CompilationParameters& info);
 
     class SPIRVEditor
     {
@@ -322,7 +338,7 @@ namespace vkbase::ShadersRC
                 }
                 text+='\n';
             }
-            spirv_code= vkbase::ShadersRC::text_to_spirv(text);
+            spirv_code= vkbase::rc::text_to_spirv(text);
             return spirv_code;
         }
     };

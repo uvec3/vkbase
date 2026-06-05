@@ -17,12 +17,13 @@
 #include <slang-com-ptr.h>
 
 #include "slang/external/spirv-tools/include/spirv-tools/libspirv.h"
+#include<shaderc/shaderc.h>
 
 
 
 
 
-namespace vkbase::ShadersRC
+namespace vkbase::rc
 {
     constexpr int GLOBAL_SESSIONS_MAX = 4;
     std::vector<Slang::ComPtr<slang::IGlobalSession>> globalSessions;
@@ -49,7 +50,7 @@ namespace vkbase::ShadersRC
 
             if (create_global_session)
             {
-                SlangGlobalSessionDesc desc = {};
+                SlangGlobalSessionDesc desc = {.enableGLSL = true};
                 desc.minLanguageVersion=SLANG_LANGUAGE_VERSION_LATEST;
                 createGlobalSession(&desc, globalSession.writeRef());
                 if (!globalSession)
@@ -85,6 +86,14 @@ namespace vkbase::ShadersRC
         return out;
     }
 
+    std::string blobToString(slang::IBlob* blob)
+    {
+        if (!blob)
+            return {};
+        const char* data = static_cast<const char*>(blob->getBufferPointer());
+        return std::string(data, blob->getBufferSize());
+    }
+
 
     class FilesystemClass: public ISlangFileSystem
     {
@@ -104,9 +113,15 @@ namespace vkbase::ShadersRC
             std::cout<<"Loading file: "<<path<<std::endl;
             if (!m_load)
                 return SLANG_E_NOT_AVAILABLE;
-            std::string content=m_load(path);
-            if(content.empty())
+
+            auto load_res=m_load(path);
+            if(!load_res.has_value())
                 return SLANG_E_NOT_FOUND;
+
+            std::string content=std::move(load_res.value());
+            if (content.empty())
+                content=" ";
+
             ISlangBlob* blob = slang_createBlob(content.data(), content.size());
             if (!blob)
                 return SLANG_FAIL;
@@ -115,11 +130,40 @@ namespace vkbase::ShadersRC
         }
     };
 
-    std::tuple<std::vector<uint32_t>,std::string> compile_internal(bool debug,CompilationParameters info, const std::string& sourceWithDefines, const Slang::ComPtr<slang::IGlobalSession>& globalSession, SlangStage entryPointStage)
+    std::tuple<std::vector<uint32_t>,std::string,std::string> compile_internal(bool debug,CompilationParameters info, const std::string& sourceWithDefines, const Slang::ComPtr<slang::IGlobalSession>& globalSession, SlangStage entryPointStage)
     {
         std::vector<uint32_t> spirv;
+
         //compilation options
         std::vector<slang::CompilerOptionEntry> options;
+
+
+        options.emplace_back(
+            slang::CompilerOptionEntry
+            {
+                .name = slang::CompilerOptionName::AllowGLSL,
+                .value = slang::CompilerOptionValue
+                {
+                    .kind = slang::CompilerOptionValueKind::Int,
+                    .intValue0 = 1,
+                }
+            });
+
+
+        if (info.source_is_glsl)
+        {
+            options.emplace_back(
+                slang::CompilerOptionEntry
+                {
+                    .name = slang::CompilerOptionName::Language,
+                    .value = slang::CompilerOptionValue
+                    {
+                        .kind = slang::CompilerOptionValueKind::Int,
+                        .intValue0 = SlangSourceLanguage::SLANG_SOURCE_LANGUAGE_GLSL,
+                    }
+                });
+        }
+
         if (debug)
         {
             options.emplace_back(
@@ -132,17 +176,17 @@ namespace vkbase::ShadersRC
                         .intValue0 = SlangOptimizationLevel::SLANG_OPTIMIZATION_LEVEL_NONE,
                     }
                 });
-
             options.emplace_back(
-                slang::CompilerOptionEntry
-                {
-                    .name = slang::CompilerOptionName::PreserveParameters,
-                    .value = slang::CompilerOptionValue
-                    {
-                        .kind = slang::CompilerOptionValueKind::Int,
-                        .intValue0 = 1,
-                    }
-                });
+        slang::CompilerOptionEntry
+        {
+            .name = slang::CompilerOptionName::PreserveParameters,
+            .value = slang::CompilerOptionValue
+            {
+                .kind = slang::CompilerOptionValueKind::Int,
+                .intValue0 = 1,
+            }
+        });
+
         }
         else
         {
@@ -157,6 +201,8 @@ namespace vkbase::ShadersRC
                     }
                 });
         }
+
+
         options.emplace_back(
             slang::CompilerOptionEntry
             {
@@ -180,13 +226,31 @@ namespace vkbase::ShadersRC
 
 
 
-
         slang::SessionDesc sessionDesc{};
 
         slang::TargetDesc targetDesc{};
         targetDesc.flags |= SLANG_COMPILE_FLAG_NO_MANGLING;
-        targetDesc.format = SLANG_SPIRV;
-        targetDesc.profile = globalSession->findProfile("spirv_1_6");
+
+        if (info.target == "SPIRV")
+        {
+            targetDesc.format = SLANG_SPIRV;
+            targetDesc.profile = globalSession->findProfile("spirv_1_6");
+        }
+        else if (info.target== "HLSL")
+        {
+            targetDesc.format = SLANG_HLSL;
+            targetDesc.profile = globalSession->findProfile("sm_6_0");
+        }
+        else if (info.target == "GLSL")
+        {
+            targetDesc.format = SLANG_GLSL;
+            targetDesc.profile = globalSession->findProfile("glsl_460");
+        }
+        else
+        {
+            throw std::runtime_error("Unsupported target: " + info.target);
+        }
+
         sessionDesc.compilerOptionEntryCount = options.size();
         sessionDesc.compilerOptionEntries = options.data();
         sessionDesc.targets = &targetDesc;
@@ -229,7 +293,7 @@ namespace vkbase::ShadersRC
         }
         if (!module)
         {
-            return {std::vector<uint32_t>{},std::string(diagnostics_string)};
+            return {std::vector<uint32_t>{},std::string(diagnostics_string),{}};
         }
 
         Slang::ComPtr<slang::IEntryPoint> entryPoint;
@@ -251,7 +315,7 @@ namespace vkbase::ShadersRC
                                               diagnostics->getBufferSize());
         if (SLANG_FAILED(result))
         {
-            return {std::vector<uint32_t>{},std::string(diagnostics_string)};
+            return {std::vector<uint32_t>{},std::string(diagnostics_string),{}};
         }
 
         //Linking
@@ -263,7 +327,7 @@ namespace vkbase::ShadersRC
                                               diagnostics->getBufferSize());
         if (SLANG_FAILED(result))
         {
-            return {std::vector<uint32_t>{},std::string(diagnostics_string)};
+            return {std::vector<uint32_t>{},std::string(diagnostics_string),{}};
         }
 
 
@@ -280,14 +344,22 @@ namespace vkbase::ShadersRC
 
         if (diagnostics)
             diagnostics_string += std::string(static_cast<const char*>(diagnostics->getBufferPointer()),
-                                              diagnostics->getBufferSize());
+                                                diagnostics->getBufferSize());
         if (SLANG_FAILED(result))
         {
-            return {std::vector<uint32_t>{},std::string(diagnostics_string)};
+            return {std::vector<uint32_t>{}, std::string(diagnostics_string),{}};
         }
 
-        spirv = blobToSpirvVector(kernelBlob);
-        return {spirv,diagnostics_string};
+        if (info.target!="SPIRV")
+        {
+            auto text=blobToString(kernelBlob);
+            return {{},diagnostics_string,text};
+        }
+        else
+        {
+            spirv = blobToSpirvVector(kernelBlob);
+            return {spirv,diagnostics_string,{}};
+        }
     }
 
     std::map<std::string,FileDiagnostics> parse_diagnostics(std::string& diagnostics,const std::string& mainFileName,int lines_offset,bool modify_lines)
@@ -394,7 +466,6 @@ namespace vkbase::ShadersRC
         }
         sourceWithDefines += info.source;
 
-
         //Translate entry point stage
         SlangStage entryPointStage;
         switch (info.type)
@@ -417,30 +488,30 @@ namespace vkbase::ShadersRC
         //Acquire global session
         Slang::ComPtr<slang::IGlobalSession> globalSession = acquire_global_session();
 
-
         CompilationResult compilation_result{.success = true};
         std::string diagnostics_text;
         if (info.compile_release)
         {
-            auto  [release_spv,release_diagnostics] = compile_internal(false,info, sourceWithDefines, globalSession, entryPointStage);
-            if (!release_spv.empty())
+            auto  [release_spv,release_diagnostics,text] = compile_internal(false,info, sourceWithDefines, globalSession, entryPointStage);
+            if (!release_spv.empty()||!text.empty())
             {
                 compilation_result.spirv=std::move(release_spv);
+                compilation_result.text=std::move(text);
             }
             else
             {
                 compilation_result.success=false;
             }
             diagnostics_text=std::move(release_diagnostics);
-
         }
         if (info.compile_debug)
         {
-            auto  [debug_spv,debug_diagnostics] = compile_internal(true,info, sourceWithDefines, globalSession, entryPointStage);
+            auto  [debug_spv,debug_diagnostics,text] = compile_internal(true,info, sourceWithDefines, globalSession, entryPointStage);
 
-            if (!debug_spv.empty())
+            if (!debug_spv.empty()||!text.empty())
             {
                 compilation_result.spirv_debug=debug_spv;
+                compilation_result.text=std::move(text);
             }
             else
             {
@@ -449,10 +520,7 @@ namespace vkbase::ShadersRC
             diagnostics_text+=debug_diagnostics;
         }
 
-
         return_global_session(globalSession); //return compiler session to the pool
-
-
         const int lines_offset = static_cast<int>(info.defines.size());
         if (info.parse_diagnostics)
             compilation_result.diagnostics = parse_diagnostics(diagnostics_text, info.fileName, lines_offset, true);

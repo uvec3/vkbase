@@ -11,16 +11,18 @@ FetchContent_Declare(
 )
 set(BOOST_INCLUDE_LIBRARIES regex)
 FetchContent_MakeAvailable(Boost)
-#find_package(Boost REQUIRED COMPONENTS regex)
 
 add_library(ShadersSlang STATIC ShaderCompilerSlang.cpp ShaderCompilerSlang.hpp)
 # keep existing Vulkan include dirs and add Slang include dirs when enabled below
 target_include_directories(ShadersSlang PUBLIC ${Vulkan_INCLUDE_DIRS})
 include_directories(${Vulkan_INCLUDE_DIRS})
 
+
+SET(SLANG_LIB_TYPE STATIC CACHE BOOL "Build Slang as a static library")
+
 set(SLANG_ENABLE_TESTS OFF CACHE BOOL "Build Slang tests" FORCE)
 set(SLANG_ENABLE_EXAMPLES OFF CACHE BOOL "Build Slang tests" FORCE)
-SET(SLANG_LIB_TYPE STATIC CACHE BOOL "Build Slang as a static library")
+
 
 SET(SLANG_RHI_ENABLE_D3D12 OFF CACHE BOOL "" FORCE)
 SET(SLANG_RHI_ENABLE_D3D11 OFF CACHE BOOL ""  FORCE)

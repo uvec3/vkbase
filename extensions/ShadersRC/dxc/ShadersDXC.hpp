@@ -7,7 +7,7 @@
 
 
 
-namespace vkbase::ShadersRC {
+namespace vkbase::rc {
     [[maybe_unused]] std::vector<uint32_t>
     compileShaderDXC(const std::string &source, const std::string &fileName, ShaderType type,
                      const ::std::string &entryPoint, const std::map<std::string, std::string> &defines,

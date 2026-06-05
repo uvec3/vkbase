@@ -2,7 +2,7 @@
 
 #include "../ShaderType.hpp"
 
-namespace vkbase::ShadersRC {
+namespace vkbase::rc {
 
     [[maybe_unused]] CompilationResult compileShaderSlang(const CompilationParameters& info);
     

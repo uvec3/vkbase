@@ -6,8 +6,10 @@
 #include <functional>
 #include <optional>
 
-namespace vkbase::ShadersRC
+namespace vkbase::rc
 {
+    typedef std::vector<uint32_t> Spirv;
+
     enum class ShaderType {
         Vertex,
         Fragment,
@@ -19,15 +21,16 @@ namespace vkbase::ShadersRC
 
 
     // typedef std::string (*FnLoadFile)(const std::string& path);
-    typedef std::function<std::string(const std::string&path)> FnLoadFile;
+    typedef std::function<std::optional<std::string>(const std::string& path)> FnLoadFile;
 
 
     struct CompilationParameters
     {
         std::string source;
         ShaderType type=ShaderType::Compute;
-        std::string fileName="shader.slang";
+        std::string fileName="shader";
         std::string entryPointName="main";
+        std::string target="SPIRV";
         std::map<std::string, std::string> defines;
         std::vector<std::string> includePaths;
 
@@ -36,6 +39,8 @@ namespace vkbase::ShadersRC
         bool compile_release=false;
         bool compile_debug=false;
         bool parse_diagnostics=true;
+
+        bool source_is_glsl=false;
     };
 
     struct Message
@@ -55,6 +60,7 @@ namespace vkbase::ShadersRC
         bool success;
         std::vector<uint32_t> spirv;
         std::vector<uint32_t> spirv_debug;
+        std::string text;
         std::string diagnostics_text;
         std::map<std::string, FileDiagnostics> diagnostics;
         double compilation_time;

@@ -16,7 +16,7 @@
     #include "dxc/WinAdapter.h"
 #endif
 #include "dxcapi.h"
-namespace vkbase::ShadersRC
+namespace vkbase::rc
 {
     template<typename T>
         struct ComPtrLite {
