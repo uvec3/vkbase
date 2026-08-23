@@ -7,234 +7,229 @@
 #include <iostream>
 #include <stdexcept>
 #include <utility>
-
 #include "Event.hpp"
-#include "../extensions/ShadersRC/slang/slang/external/unordered_dense/include/ankerl/unordered_dense.h"
 
-
-/**
- * @brief Represents a single parallel task container.
- *
- * Holds the thread running the task, the completion finisher callback,
- * the produced data of type T and a finished flag.
- *
- * Template parameter:
- * - T: the type produced by the background task and consumed by the finisher.
- */
-
-struct IRunningTask
+namespace  vkbase
 {
-    virtual void callFinisher()=0;
-    virtual void callDetachAction()=0;
-    virtual ~IRunningTask()=default;
 
-    std::jthread thread;
-    std::atomic<bool> finished{false};
-};
+    extern thread_local std::stop_token stop_token;
 
-template<typename T>
-struct RunningTask:IRunningTask
-{
-    std::move_only_function<void(T)> finisher;
-    std::move_only_function<void(T)> detachAction;
-    T data;
 
-    void callFinisher() override
+    struct IRunningTask
     {
-        finisher(std::move(data));
-    }
+        virtual void callFinisher()=0;
+        virtual void callDetachAction()=0;
+        virtual ~IRunningTask()=default;
 
-    void callDetachAction() override
-    {
-        detachAction(std::move(data));
-    }
-
-    RunningTask()
-    {
-        std::cout<<"RunningTask created\n";
-    }
-
-    //delete copy and move constructors and assignment operators
-    RunningTask(const RunningTask&) = delete;
-    RunningTask& operator=(const RunningTask&) = delete;
-    RunningTask(RunningTask&&) = delete;
-    RunningTask& operator=(RunningTask&&) = delete;
-
-
-
-    ~RunningTask() override
-    {
-        if (thread.joinable())
-            thread.join();
-        std::cout<<"RunningTask destroyed\n";
-    }
-};
-
-struct IQueuedTask
-{
-    virtual std::unique_ptr<IRunningTask> run(std::atomic<int>& runningThreads)=0;
-    virtual ~IQueuedTask()=default;
-};
-
-template<typename T>
-struct QueuedTask:IQueuedTask
-{
-    std::move_only_function<T(std::stop_token stop_token)> task;
-    std::move_only_function<void(T)> taskFinisher;
-    std::move_only_function<void(T)> detachAction;
-
-    std::unique_ptr<IRunningTask> run(std::atomic<int>& runningThreads) override
-    {
-        ++runningThreads;
-        auto running_task=std::make_unique<RunningTask<T>>();
-        running_task->finisher=std::move(taskFinisher);
-        running_task->detachAction=std::move(detachAction);
-        running_task->thread = std::jthread(
-            [&runningThreads,task_ptr=running_task.get(),fn=std::move(task)](std::stop_token stop_token) mutable
-        {
-            task_ptr->data = fn(stop_token);
-            task_ptr->finished=true;
-        });
-
-
-        return running_task;
+        std::jthread thread;
+        std::atomic<bool> finished{false};
     };
-};
 
-
-
-class ParallelTaskManager
-{
-protected:
-    int maxThreads=1;
-    int acceptThreads=1;
-    std::atomic<int> runningThreads=0;
-    std::deque<std::unique_ptr<IRunningTask>> running_tasks;
-    std::deque<std::unique_ptr<IQueuedTask>> queued_tasks;
-    std::vector<std::unique_ptr<IRunningTask>> detached_tasks;
-    int queueSize=1;
-
-public:
-
-    explicit ParallelTaskManager(int maxThreads=1, int acceptThreads=1, int queue_size=1):
-    maxThreads(maxThreads),acceptThreads(acceptThreads),queueSize(queue_size)
+    template<typename T>
+    struct RunningTask:IRunningTask
     {
-        if(acceptThreads>maxThreads)
-            throw std::runtime_error("acceptThreads>maxThreads");
-    }
+        std::move_only_function<void(T)> finisher;
+        std::move_only_function<void(T)> detachAction;
+        T data;
 
-    explicit ParallelTaskManager(int maxThreads=1, int queue_size=1, bool only_finish_last=false):
-    maxThreads(maxThreads),queueSize(queue_size)
+        void callFinisher() override
+        {
+            finisher(std::move(data));
+        }
+
+        void callDetachAction() override
+        {
+            detachAction(std::move(data));
+        }
+
+        RunningTask()
+        {
+            std::cout<<"RunningTask created\n";
+        }
+
+        //delete copy and move constructors and assignment operators
+        RunningTask(const RunningTask&) = delete;
+        RunningTask& operator=(const RunningTask&) = delete;
+        RunningTask(RunningTask&&) = delete;
+        RunningTask& operator=(RunningTask&&) = delete;
+
+
+
+        ~RunningTask() override
+        {
+            if (thread.joinable())
+                thread.join();
+            std::cout<<"RunningTask destroyed\n";
+        }
+    };
+
+    struct IQueuedTask
     {
-        if (only_finish_last)
-            acceptThreads=1;
-        else
-            acceptThreads=maxThreads;
-    }
+        virtual std::unique_ptr<IRunningTask> run(std::atomic<int>& runningThreads)=0;
+        virtual ~IQueuedTask()=default;
+    };
 
-    //get result type of task function, in all cases with stop_token or without
-    template <typename F>
-    using task_result_t =
-        typename decltype([]{
-            if constexpr (std::is_invocable_v<F, std::stop_token>)
-                return std::type_identity<std::invoke_result_t<F, std::stop_token>>{};
+    template<typename T>
+    struct QueuedTask:IQueuedTask
+    {
+        std::move_only_function<T(std::stop_token stop_token)> task;
+        std::move_only_function<void(T)> taskFinisher;
+        std::move_only_function<void(T)> detachAction;
+
+        std::unique_ptr<IRunningTask> run(std::atomic<int>& runningThreads) override
+        {
+            ++runningThreads;
+            auto running_task=std::make_unique<RunningTask<T>>();
+            running_task->finisher=std::move(taskFinisher);
+            running_task->detachAction=std::move(detachAction);
+            running_task->thread = std::jthread(
+                [&runningThreads,task_ptr=running_task.get(),fn=std::move(task)](std::stop_token stop_token) mutable
+            {
+                vkbase::stop_token=stop_token;
+                task_ptr->data = fn(stop_token);
+                task_ptr->finished=true;
+            });
+
+
+            return running_task;
+        };
+    };
+
+
+
+    class ParallelTaskManager
+    {
+    protected:
+        int maxThreads=1;
+        int acceptThreads=1;
+        std::atomic<int> runningThreads=0;
+        std::deque<std::unique_ptr<IRunningTask>> running_tasks;
+        std::deque<std::unique_ptr<IQueuedTask>> queued_tasks;
+        std::vector<std::unique_ptr<IRunningTask>> detached_tasks;
+        int queueSize=1;
+
+    public:
+
+        explicit ParallelTaskManager(int maxThreads=1, int acceptThreads=1, int queue_size=1):
+        maxThreads(maxThreads),acceptThreads(acceptThreads),queueSize(queue_size)
+        {
+            if(acceptThreads>maxThreads)
+                throw std::runtime_error("acceptThreads>maxThreads");
+        }
+
+        explicit ParallelTaskManager(int maxThreads=1, int queue_size=1, bool only_finish_last=false):
+        maxThreads(maxThreads),queueSize(queue_size)
+        {
+            if (only_finish_last)
+                acceptThreads=1;
             else
-                return std::type_identity<std::invoke_result_t<F>>{};
-        }())::type;
-
-    template<typename TaskFunc, typename FinisherFunc>
-    void runTask(TaskFunc&& task, FinisherFunc&& taskFinisher)
-    {
-        using T = task_result_t<TaskFunc>;
-        runTask(std::forward<TaskFunc>(task), std::forward<FinisherFunc>(taskFinisher), [](T){});
-    }
-
-    template<typename TaskFunc, typename FinisherFunc,typename DetachAction>
-    void runTask(TaskFunc&& task, FinisherFunc&& taskFinisher, DetachAction&& detachAction)
-    {
-        using T = task_result_t<TaskFunc>;
-
-        auto new_task = std::make_unique<QueuedTask<T>>();
-
-        if constexpr (std::is_assignable_v<std::move_only_function<T(std::stop_token)>,TaskFunc&&>)
-        {
-            new_task->task = std::forward<TaskFunc>(task);
-        }
-        else
-        {
-            std::move_only_function<T(std::stop_token)> tw = [t=std::forward<TaskFunc>(task)](std::stop_token){return t();};
-            new_task->task = std::move(tw);
+                acceptThreads=maxThreads;
         }
 
-        new_task->taskFinisher = std::forward<FinisherFunc>(taskFinisher);
-        new_task->detachAction = std::forward<DetachAction>(detachAction);
+        //get result type of task function, for all cases: with stop_token or without it
+        template <typename F>
+        using task_result_t =
+            typename decltype([]{
+                if constexpr (std::is_invocable_v<F, std::stop_token>)
+                    return std::type_identity<std::invoke_result_t<F, std::stop_token>>{};
+                else
+                    return std::type_identity<std::invoke_result_t<F>>{};
+            }())::type;
 
-        if(runningThreads < maxThreads) // free thread available
+        template<typename TaskFunc, typename FinisherFunc>
+        void runTask(TaskFunc&& task, FinisherFunc&& taskFinisher)
         {
-            if(running_tasks.size() == acceptThreads)
+            using T = task_result_t<TaskFunc>;
+            runTask(std::forward<TaskFunc>(task), std::forward<FinisherFunc>(taskFinisher), [](T){});
+        }
+
+        template<typename TaskFunc, typename FinisherFunc,typename DetachAction>
+        void runTask(TaskFunc&& task, FinisherFunc&& taskFinisher, DetachAction&& detachAction)
+        {
+            using T = task_result_t<TaskFunc>;
+
+            auto new_task = std::make_unique<QueuedTask<T>>();
+
+            if constexpr (std::is_assignable_v<std::move_only_function<T(std::stop_token)>,TaskFunc&&>)
             {
-                running_tasks.back()->thread.request_stop();
-                detached_tasks.push_back(std::move(running_tasks.back()));
-                running_tasks.pop_back();
+                new_task->task = std::forward<TaskFunc>(task);
+            }
+            else
+            {
+                std::move_only_function<T(std::stop_token)> tw = [t=std::forward<TaskFunc>(task)](std::stop_token){return t();};
+                new_task->task = std::move(tw);
             }
 
-            running_tasks.emplace_front(new_task->run(runningThreads));
-        }
-        else if (queueSize > 0)
-        {
-            if (queued_tasks.size() == queueSize)
+            new_task->taskFinisher = std::forward<FinisherFunc>(taskFinisher);
+            new_task->detachAction = std::forward<DetachAction>(detachAction);
+
+            if(runningThreads < maxThreads) // free thread available
             {
-                queued_tasks.pop_front();
+                if(running_tasks.size() == acceptThreads)
+                {
+                    running_tasks.back()->thread.request_stop();
+                    detached_tasks.push_back(std::move(running_tasks.back()));
+                    running_tasks.pop_back();
+                }
+
+                running_tasks.emplace_front(new_task->run(runningThreads));
             }
-            queued_tasks.emplace_back(std::move(new_task));
+            else if (queueSize > 0)
+            {
+                if (queued_tasks.size() == queueSize)
+                {
+                    queued_tasks.pop_front();
+                }
+                queued_tasks.emplace_back(std::move(new_task));
+            }
         }
-    }
 
-    void finish();
-    void terminateAll();
-    void detachAll();
-    int get_treads_running();
+        void finish();
+        void terminateAll();
+        void detachAll();
+        int get_threads_running();
 
-    virtual ~ParallelTaskManager()
+        virtual ~ParallelTaskManager()
+        {
+            terminateAll();
+        }
+
+        bool idle() const
+        {
+            return running_tasks.empty()&&detached_tasks.empty();
+        }
+
+        bool isFree() const
+        {
+            return running_tasks.empty();
+        }
+    };
+
+
+    class AutoParallelTaskManager:public ParallelTaskManager,public vkbase::OnSyncReceiver
     {
-        terminateAll();
-    }
-
-    bool idle() const
-    {
-        return running_tasks.empty()&&detached_tasks.empty();
-    }
-
-    bool isFree() const
-    {
-        return running_tasks.empty();
-    }
-};
-
-
-class AutoParallelTaskManager:public ParallelTaskManager,public vkbase::OnSyncReceiver
-{
-public:
-    explicit AutoParallelTaskManager(int maxThreads=1,int queue_size=1, bool only_finish_last=false ,int priority=0):
-    ParallelTaskManager(maxThreads,queue_size,only_finish_last)
-    {
-        vkbase::OnSyncReceiver::disable();
-        vkbase::OnSyncReceiver::setPriority(priority);
-    }
-
-    template<typename TaskFunc, typename FinisherFunc>
-    void runTask(TaskFunc&& task, FinisherFunc&& taskFinisher)
-    {
-        ParallelTaskManager::runTask(std::forward<TaskFunc>(task), std::forward<FinisherFunc>(taskFinisher));
-        if(! this->running_tasks.empty())
-            vkbase::OnSyncReceiver::enable();
-    }
-
-protected:
-    void onUpdateLogic(uint32_t imageIndex) override
-    {
-        this->finish();
-        if(this->running_tasks.empty())
+    public:
+        explicit AutoParallelTaskManager(int maxThreads=1,int queue_size=1, bool only_finish_last=false ,int priority=0):
+        ParallelTaskManager(maxThreads,queue_size,only_finish_last)
+        {
             vkbase::OnSyncReceiver::disable();
-    }
-};
+            vkbase::OnSyncReceiver::setPriority(priority);
+        }
+
+        template<typename TaskFunc, typename FinisherFunc>
+        void runTask(TaskFunc&& task, FinisherFunc&& taskFinisher)
+        {
+            ParallelTaskManager::runTask(std::forward<TaskFunc>(task), std::forward<FinisherFunc>(taskFinisher));
+            if(! this->running_tasks.empty())
+                vkbase::OnSyncReceiver::enable();
+        }
+
+    protected:
+        void onUpdateLogic(uint32_t imageIndex) override
+        {
+            this->finish();
+            if(this->running_tasks.empty())
+                vkbase::OnSyncReceiver::disable();
+        }
+    };
+}
