@@ -2158,7 +2158,7 @@ namespace vkbase::imgui
         //setup platform backend
 
 
-////////////////////////////////////////
+        ////////////////////////////////////////
         // Setup Dear ImGui context
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
@@ -2182,11 +2182,6 @@ namespace vkbase::imgui
         //ImGui::StyleColorsLight();
 
 
-        ImGuiStyle& style = ImGui::GetStyle();
-
-        style.WindowRounding = 5.0f;
-        style.Colors[ImGuiCol_WindowBg].w = 1.f;
-
 
         // Setup Platform/Renderer backends
         initIMGUIPlatformBackend();
@@ -2208,7 +2203,7 @@ namespace vkbase::imgui
         ImGui_ImplVulkan_Init(&init_info);
 
 
-////////////////////////////////////////////
+        ////////////////////////////////////////////
 
         addDrawPrepareCallback([](uint32_t imageIndex)
         {
@@ -2300,7 +2295,8 @@ namespace vkbase::imgui
     static std::string defaultFontName = "";
     void renderIMGUI()
     {
-        if (fonts.find(defaultFontName)==fonts.end() || fonts.at(defaultFontName).find((int)defaultFontSize)==fonts[""].end())
+        if (fonts.find(defaultFontName)==fonts.end() ||
+            !fonts.at(defaultFontName).contains((int)defaultFontSize))
         {
             pending_font_requests.push_back(FontRequest{defaultFontName, (int)defaultFontSize});
         }
@@ -2443,12 +2439,10 @@ namespace vkbase::imgui
         defaultFontName = name;
     }
 
-    std::string getDefaultFontName()
+    const std::string& getDefaultFontName()
     {
         return defaultFontName;
     }
-
-
 
 
     static bool processPendingFonts()
@@ -2487,6 +2481,8 @@ namespace vkbase::imgui
             {
                 const std::string asset_key = std::string("Fonts/") + font_name+".ttf";
                 auto font_binary=vkbase::assets::get(asset_key);
+                if (font_binary.empty())
+                    std::cerr<<std::format("Font {} was not found in assets: Fonts/{}.ttf \n",font_name,font_name);
                 ImFont *added;
                 if(!font_binary.empty())
                 {
@@ -2526,7 +2522,7 @@ namespace vkbase::imgui
         return true;
     }
 
-    void pushFont(const std::string& font_name, int size)
+    bool pushFont(const std::string& font_name, int size)
     {
         if(size < 4)
             size = 4;
@@ -2538,12 +2534,18 @@ namespace vkbase::imgui
             {
                 ImGui::PushFont(s_it->second.font);
                 s_it->second.is_used=true;
-                return;
+                return true;
             }
         }
 
         pending_font_requests.push_back(FontRequest{font_name,size});
         // Push default for now (will be replaced next frame when processed)
         ImGui::PushFont(ImGui::GetFont());
+        return false;
+    }
+
+    bool pushFont(int size)
+    {
+        return pushFont(getDefaultFontName(),size);
     }
 }
