@@ -5,7 +5,7 @@
 #include <vector>
 
 #include <vulkan/vulkan.hpp>
-#include <vma/vk_mem_alloc.h>
+#include <vk_mem_alloc.h>
 
 #include "DEFINES.hpp"
 #include "SystemBackend.hpp"
@@ -91,7 +91,6 @@ namespace vkbase
     //this should be used for updating data which are used in rendering
     int addRewriteBuffersCallback(const std::function<void( uint32_t)>& callback, int priority= 0);
     int addWriteMainBufferCallback(const std::function<void(VkCommandBuffer, uint32_t)>& callback, int priority= 0);
-    int addTouchHandler(const std::function<void(const sys::TouchEvent&)>& callback, int priority= 0);
     int addSurfaceChangedHandler(const std::function<void()>& callback, int priority= 0);
     int addMessagesListener(const std::function<void(std::string_view,MessageType)>& listener,int priority=0);
     int addWriteBeforeRenderBufferCallback(const std::function<void(VkCommandBuffer, uint32_t)>& callback, int priority= 0);
@@ -101,7 +100,6 @@ namespace vkbase
     void removeRewriteBuffersCallback(int id);
     void removeWriteMainBufferCallback(int id);
     void removeWriteBeforeRenderBufferCallback(int id);
-    void removeTouchHandler(int id);
     void removeSurfaceChangedHandler(int id);
     void removeMessagesListener(int id);
 

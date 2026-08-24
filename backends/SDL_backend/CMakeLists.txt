@@ -18,7 +18,8 @@ endif ()
 
 target_link_libraries(SDL_backend_core
 		PRIVATE ${Vulkan_LIBRARIES}
-		PUBLIC SDL2main ${SDL_LIB_NAME})
+		PUBLIC SDL2main ${SDL_LIB_NAME}
+		vkbase_e)
 
 add_library(SDL_backend_imgui imgui_impl_sdl.cpp)
 target_include_directories(SDL_backend_imgui
@@ -26,7 +27,8 @@ target_include_directories(SDL_backend_imgui
 		PRIVATE ${Vulkan_INCLUDE_DIRS})
 target_link_libraries(SDL_backend_imgui
 		PUBLIC SDL2main ${SDL_LIB_NAME}
-		PRIVATE ${Vulkan_LIBRARIES})
+		PRIVATE ${Vulkan_LIBRARIES}
+		vkbase_e)
 
 #copy sdl2 shared lib to app
 #add_custom_command(TARGET SDL_backend_core POST_BUILD

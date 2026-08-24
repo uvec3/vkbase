@@ -210,28 +210,28 @@ namespace vkbase::sys
                 //touch events
                 case SDL_FINGERDOWN:
                 {
-                    engEvents.touchEvents.push(
-                            {event.tfinger.fingerId, {event.tfinger.x * m_width, event.tfinger.y * m_height},
-                             event.tfinger.timestamp,
-                             TouchEvent::DOWN});
+                    //engEvents.touchEvents.push(
+                    //        {event.tfinger.fingerId, {event.tfinger.x * m_width, event.tfinger.y * m_height},
+                    //         event.tfinger.timestamp,
+                    //         TouchEvent::DOWN});
                     continue;
                 }
 
                 case SDL_FINGERUP:
                 {
-                    engEvents.touchEvents.push(
-                            {event.tfinger.fingerId, {event.tfinger.x * m_width, event.tfinger.y * m_height},
-                             event.tfinger.timestamp,
-                             TouchEvent::UP});
+                    //engEvents.touchEvents.push(
+                    //        {event.tfinger.fingerId, {event.tfinger.x * m_width, event.tfinger.y * m_height},
+                    //         event.tfinger.timestamp,
+                    //         TouchEvent::UP});
                     continue;
                 }
 
                 case SDL_FINGERMOTION:
                 {
-                    engEvents.touchEvents.push(
-                            {event.tfinger.fingerId, {event.tfinger.x * m_width, event.tfinger.y * m_height},
-                             event.tfinger.timestamp,
-                             TouchEvent::MOVE});
+                    //engEvents.touchEvents.push(
+                    //        {event.tfinger.fingerId, {event.tfinger.x * m_width, event.tfinger.y * m_height},
+                    //         event.tfinger.timestamp,
+                    //         TouchEvent::MOVE});
                     continue;
                 }
             }

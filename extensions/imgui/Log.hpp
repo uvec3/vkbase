@@ -5,7 +5,7 @@
 #include "imgui.hpp"
 #include <mutex>
 
-#include "glm/glm.hpp"
+#include <glm/glm.hpp>
 
 namespace vkbase::imgui
 {

@@ -4,5 +4,5 @@ project(vkbase)
 find_package(Vulkan REQUIRED)
 
 add_library(Buffer Buffer.cpp Buffer.hpp)
-target_link_libraries(Buffer PUBLIC ${Vulkan_LIBRARIES})
-target_include_directories(Buffer PUBLIC ${Vulkan_INCLUDE_DIRS})
+target_link_libraries(Buffer PUBLIC ${Vulkan_LIBRARIES}  vkbase_e)
+target_include_directories(Buffer PUBLIC ${Vulkan_INCLUDE_DIRS} ) 

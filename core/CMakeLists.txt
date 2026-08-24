@@ -41,6 +41,27 @@ target_include_directories(
 )
 
 
+
+###############
+### FETCH #####
+###############
+
+# --- FETCH GLM ---
+FetchContent_Declare(
+    glm
+    GIT_REPOSITORY https://github.com/g-truc/glm.git
+    GIT_TAG        1.0.1  # Or any stable tag/branch version
+)
+FetchContent_MakeAvailable(glm)
+
+# --- FETCH VMA (Vulkan Memory Allocator) ---
+FetchContent_Declare(
+    vulkanmemoryallocator
+    GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+    GIT_TAG        v3.3.0 # Or the latest stable release tag
+)
+FetchContent_MakeAvailable(vulkanmemoryallocator)
+
 ###############
 ### LINKING ###
 ###############
@@ -49,6 +70,8 @@ target_include_directories(
 target_link_libraries(
 		vkbase_e
 		PUBLIC ${Vulkan_LIBRARIES}
+		PUBLIC	glm::glm
+		PUBLIC VulkanMemoryAllocator
 )
 
 

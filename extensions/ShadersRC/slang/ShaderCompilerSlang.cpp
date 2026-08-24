@@ -17,7 +17,7 @@
 #include <slang-com-ptr.h>
 
 #include "slang/external/spirv-tools/include/spirv-tools/libspirv.h"
-#include<shaderc/shaderc.h>
+// #include<shaderc/shaderc.h>
 
 
 

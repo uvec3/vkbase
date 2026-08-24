@@ -3,30 +3,10 @@
 #include <string>
 #include <vulkan/vulkan.h>
 #include <queue>
-#include "glm/glm.hpp"
 
 
 namespace vkbase::sys
 {
-    struct TouchEvent
-    {
-        enum Action
-        {
-            DOWN,
-            MOVE,
-            UP
-        };
-
-        int64_t index;
-        glm::vec2 pos;
-        uint64_t time;
-        Action action;
-    };
-
-    struct EngEvents
-    {
-        std::queue<TouchEvent> touchEvents;
-    };
 
     void init();
     void destroy();
@@ -65,7 +45,3 @@ namespace vkbase::sys
     std::vector<char> saveState();
 }
 
-namespace vkbase
-{
-    extern vkbase::sys::EngEvents engEvents;
-}

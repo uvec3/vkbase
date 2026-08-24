@@ -1,5 +1,5 @@
 #define VMA_IMPLEMENTATION
-#include <vma/vk_mem_alloc.h>
+#include <vk_mem_alloc.h>
 
 #include "EngineBase.h"
 #include <iostream>
@@ -88,7 +88,6 @@ namespace vkbase
     Event<uint32_t> onDeviceSyncEvent;
     Event<VkCommandBuffer, uint32_t> onWriteBeforeRenderBufferEvent;
     Event<VkCommandBuffer, uint32_t> onWriteMainBufferEvent;
-    Event<const sys::TouchEvent&> onTouchEvent;
     Event<> onSurfaceChangedEvent;
     Event<std::string_view, MessageType> onMessageEvent;
 
@@ -190,10 +189,6 @@ namespace vkbase
 
     bool windowResized{false};
     float timestampPeriod{0.0f};
-
-    //TOUCHES
-    sys::EngEvents engEvents;
-    TouchData touchData;
 
     //VMA
     VmaAllocator vma;
@@ -1561,11 +1556,6 @@ namespace vkbase
         return onWriteMainBufferEvent.addCallback(callback, priority);
     }
 
-    int addTouchHandler(const std::function<void(const sys::TouchEvent &)> &callback, int priority)
-    {
-        return onTouchEvent.addCallback(callback, priority);
-    }
-
     int addSurfaceChangedHandler(const std::function<void()> &callback, int priority)
     {
         return onSurfaceChangedEvent.addCallback(callback, priority);
@@ -1594,11 +1584,6 @@ namespace vkbase
     void removeDrawPrepareCallback(int id)
     {
         onDrawPrepareEvent.removeCallback(id);
-    }
-
-    void removeTouchHandler(int id)
-    {
-        onTouchEvent.removeCallback(id);
     }
 
     void removeWriteMainBufferCallback(int id)

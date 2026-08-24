@@ -12,7 +12,7 @@ add_library(imgui imgui.hpp imgui.cpp
 		imgui/misc/cpp/imgui_stdlib.cpp)
 
 
-target_link_libraries(imgui PUBLIC ${Vulkan_LIBRARIES} vkbase::assets)
+target_link_libraries(imgui PUBLIC ${Vulkan_LIBRARIES} vkbase::assets vkbase_e)
 
 
 find_package(TBB QUIET)
@@ -33,3 +33,4 @@ target_include_directories( imgui_textedit PRIVATE imgui)
 
 add_library(imgui_Log Log.cpp Log.hpp )
 target_include_directories( imgui_Log PRIVATE imgui PRIVATE ${Vulkan_INCLUDE_DIRS})
+target_link_libraries(imgui_Log PUBLIC vkbase_e)
