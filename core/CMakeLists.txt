@@ -46,6 +46,8 @@ target_include_directories(
 ### FETCH #####
 ###############
 
+include(FetchContent)
+
 # --- FETCH GLM ---
 FetchContent_Declare(
     glm
@@ -73,6 +75,3 @@ target_link_libraries(
 		PUBLIC	glm::glm
 		PUBLIC VulkanMemoryAllocator
 )
-
-
-

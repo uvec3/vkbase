@@ -2481,7 +2481,7 @@ namespace vkbase::imgui
             {
                 const std::string asset_key = std::string("Fonts/") + font_name+".ttf";
                 auto font_binary=vkbase::assets::get(asset_key);
-                if (font_binary.empty())
+                if (font_name!="" && font_binary.empty())
                     std::cerr<<std::format("Font {} was not found in assets: Fonts/{}.ttf \n",font_name,font_name);
                 ImFont *added;
                 if(!font_binary.empty())
