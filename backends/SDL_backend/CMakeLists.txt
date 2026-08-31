@@ -30,6 +30,10 @@ target_link_libraries(SDL_backend_imgui
 		PRIVATE ${Vulkan_LIBRARIES}
 		vkbase_e)
 
+
+add_library(vkbase::backend::SDL::core ALIAS SDL_backend_core )
+add_library(vkbase::backend::SDL::imgui ALIAS SDL_backend_imgui )
+
 #copy sdl2 shared lib to app
 #add_custom_command(TARGET SDL_backend_core POST_BUILD
 #	COMMAND ${CMAKE_COMMAND} -E copy_if_different

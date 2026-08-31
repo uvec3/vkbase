@@ -17,7 +17,7 @@ namespace vkbase
         ~Buffer();
 
         Buffer& operator=(const Buffer& other)=delete;
-        Buffer& operator=(Buffer&& other);
+        Buffer& operator=(Buffer&& other) noexcept ;
 
 
         operator VkBuffer() const
@@ -30,7 +30,7 @@ namespace vkbase
         void copy_to_buffer_cmd(VkCommandBuffer cmd, const Buffer& dst_buffer, VkDeviceSize copy_size=0, VkDeviceSize src_offset=0, VkDeviceSize dst_offset=0);
         void copy_to_buffer(const Buffer& dst_buffer, VkDeviceSize copy_size=0, VkDeviceSize src_offset=0, VkDeviceSize dst_offset=0);
         [[nodiscard]] VkDeviceSize size() const;
-        VkBuffer get() const;
+        [[nodiscard]] VkBuffer get() const;
         [[nodiscard]] VkMemoryPropertyFlags getMemoryPropertyFlags() const;
         [[nodiscard]] bool isDeviceLocal() const;
         [[nodiscard]] VkMemoryRequirements getBufferMemoryRequirements() const;
@@ -41,6 +41,6 @@ namespace vkbase
         VkBuffer buffer=VK_NULL_HANDLE;
         VmaAllocation allocation=VK_NULL_HANDLE;
         VmaAllocationInfo info{};
-        VkDeviceSize m_size;
+        VkDeviceSize m_size=0;
     };
 }

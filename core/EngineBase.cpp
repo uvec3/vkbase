@@ -82,6 +82,7 @@ namespace vkbase
     inline void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT &createInfo);
 
     //EVENTS
+    Event<> beforeInitEvent;
     Event<> onInitEvent;
     Event<> onDestroyEvent;
     Event<uint32_t> onDrawPrepareEvent;
@@ -93,6 +94,7 @@ namespace vkbase
 
     GlobalAutoParallelTaskManager globalTaskManager;
 
+    std::thread::id main_thread_id;
 
     //the desired number of frames to be processed simultaneously (corrected when creating a swapchain with restrictions)
     uint32_t imageCount = 1;//{dep swapchain}
@@ -107,7 +109,7 @@ namespace vkbase
     //required features for device creation
     VkPhysicalDeviceFeatures deviceFeatures{};
     VkPhysicalDeviceVulkan11Features deviceFeatures11{ };
-    VkPhysicalDeviceVulkan12Features deviceFeatures12{ };
+    VkPhysicalDeviceVulkan12Features deviceFeatures12{.timelineSemaphore=VK_TRUE };
     VkPhysicalDeviceVulkan13Features deviceFeatures13{.synchronization2 = VK_TRUE };
     VkPhysicalDeviceVulkan14Features deviceFeatures14{ };
     std::vector<VkValidationFeatureEnableEXT> enabledValidationFeatures{VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT};
@@ -143,10 +145,21 @@ namespace vkbase
     VkQueue graphicsQueue{VK_NULL_HANDLE};
     //present queue handle for image output command to the surface
     VkQueue presentQueue{VK_NULL_HANDLE};
-    //
     VkQueue computeQueue{VK_NULL_HANDLE};
-
     VkQueue transferQueue{VK_NULL_HANDLE};
+
+    VkSemaphore graphicsTimelineSemaphore;
+    VkSemaphore presentTimelineSemaphore;
+    VkSemaphore computeTimelineSemaphore;
+    VkSemaphore transferTimelineSemaphore;
+
+    uint64_t graphicsTimelineSemaphore_counter=0;
+    uint64_t presentTimelineSemaphore_counter=0;
+    uint64_t computeTimelineSemaphore_counter=0;
+    uint64_t transferTimelineSemaphore_counter=0;
+
+
+
     //surface
     VkSurfaceKHR surface{VK_NULL_HANDLE};
     //swapchain
@@ -177,7 +190,10 @@ namespace vkbase
     std::vector<VkSemaphore> imageAvailableSemaphores;
     int currenImageAvailableSemaphore=0;
     //rendering finished and image can be presented
+    VkExportSemaphoreCreateInfo*  semaphoreExportCreateInfo=nullptr;
+    VkSemaphore renderFinishedTimelineSemaphore;
     std::vector<VkSemaphore> renderFinishedSemaphores;
+    uint64_t frame_id=0;
 
     //timestamps
     VkQueryPool mTimeQueryPool{VK_NULL_HANDLE};
@@ -185,7 +201,7 @@ namespace vkbase
     //FENCES (sync CPU & GPU)
     std::vector<VkFence> fenceRenderFinished;
     //current frame
-    uint32_t currentFrame{0};
+    // uint32_t currentFrame{0};
 
     bool windowResized{false};
     float timestampPeriod{0.0f};
@@ -194,7 +210,15 @@ namespace vkbase
     VmaAllocator vma;
 
 
+    VkSemaphoreSubmitInfo WaitPoint::submit_info() const
+    {
+        VkSemaphoreSubmitInfo submit_info{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
+        submit_info.semaphore=wait_token.semaphore;
+        submit_info.value=wait_token.value;
+        submit_info.stageMask=stage_flags;
+        return submit_info;
 
+    }
 
     void addDeviseExtension(const char* extension)
     {
@@ -218,9 +242,14 @@ namespace vkbase
 
     int init(const std::string &appName)
     {
+        main_thread_id=std::this_thread::get_id();
+
         m_appName = appName;
         redirectOut();//redirect std::cout and std::cerr for handling messages by engine
         sys::init();//init system dependent part
+
+        beforeInitEvent.call();
+
         createInstance();//create vulkan instance
         setupDebugMessenger();//setup debugging for vulkan
         surface= sys::createSurface(instance);//create surface (depends on platform)
@@ -1051,6 +1080,30 @@ namespace vkbase
 
     inline void createSyncObjects()
     {
+        // VkExportSemaphoreCreateInfo exportCreateInfo = {};
+        // exportCreateInfo.sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO;
+        // exportCreateInfo.pNext = nullptr;
+        // exportCreateInfo.handleTypes = handleType;
+
+        VkSemaphoreTypeCreateInfo timelineSemaphoreTypeCreateInfo = {};
+        timelineSemaphoreTypeCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+        timelineSemaphoreTypeCreateInfo.pNext = semaphoreExportCreateInfo;
+        timelineSemaphoreTypeCreateInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+        timelineSemaphoreTypeCreateInfo.initialValue = 0; // Starting timeline value
+
+
+        VkSemaphoreCreateInfo timelineSemaphoreInfo{};
+        timelineSemaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        timelineSemaphoreInfo.pNext=&timelineSemaphoreTypeCreateInfo;
+
+        vkCreateSemaphore(device,&timelineSemaphoreInfo,nullptr,&renderFinishedTimelineSemaphore);
+
+        vkCreateSemaphore(device,&timelineSemaphoreInfo,nullptr,&graphicsTimelineSemaphore);
+        vkCreateSemaphore(device,&timelineSemaphoreInfo,nullptr,&computeTimelineSemaphore);
+        vkCreateSemaphore(device,&timelineSemaphoreInfo,nullptr,&transferTimelineSemaphore);
+        vkCreateSemaphore(device,&timelineSemaphoreInfo,nullptr,&presentTimelineSemaphore);
+
+
         //resize for each image
         imageAvailableSemaphores.resize(imageCount+1);
         renderFinishedSemaphores.resize(imageCount);
@@ -1066,7 +1119,7 @@ namespace vkbase
         //create fence in signaled state( so it will not block at first pass)
         fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-        //create all in one loop
+
         for (int i = 0; i < imageCount; ++i)
         {
             if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]) != VK_SUCCESS ||
@@ -1086,6 +1139,30 @@ namespace vkbase
     }
 
 
+
+    std::vector<std::function<void()>> scheduled_tasks;
+    std::mutex scheduled_tasks_mutex;
+
+    void scheduleOnMainThread(const std::function<void()>& callback)
+    {
+        scheduled_tasks_mutex.lock();
+        scheduled_tasks.push_back(callback);
+        scheduled_tasks_mutex.unlock();
+    }
+
+    static void perform_scheduled_tasks()
+    {
+        scheduled_tasks_mutex.lock();
+        for (const auto& cb:scheduled_tasks)
+        {
+            cb();
+        }
+
+        scheduled_tasks.clear();
+        scheduled_tasks_mutex.unlock();
+    }
+
+
     void retrieveFrameTime(uint32_t i)
     {
         uint64_t buffer[2];
@@ -1101,12 +1178,20 @@ namespace vkbase
         }
     }
 
-    void drawFrame()
+    static std::vector<WaitPoint> wait_points;
+
+    void addNextSubmitWait(const WaitPoint& wait_point)
     {
+        wait_points.push_back(wait_point);
+    }
+
+    WaitToken drawFrame()
+    {
+
         //check extent
         auto newExtent=chooseSwapExtent(querySwapChainDetails(physicalDevice).capabilities);
         if(newExtent.width==0 || newExtent.height==0)//if minimized do nothing
-            return;
+            return WaitToken{renderFinishedTimelineSemaphore,0};
         else if(newExtent.width!=extent.width || newExtent.height!=extent.height)//if extent changed
         {
             recreateSwapChain();
@@ -1144,38 +1229,16 @@ namespace vkbase
         if (result == VK_ERROR_OUT_OF_DATE_KHR)
         {
             recreateSwapChain();
-            return;
+            return WaitToken{renderFinishedTimelineSemaphore,0};
         }
         else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
             throw std::runtime_error("failed to acquire swap chain image!");
 
+        ++frame_id;
+
         //call prepare events before waiting for render finished fence for this image
+        perform_scheduled_tasks();
         onDrawPrepareEvent.call(imageIndex);
-
-        //RENDERING
-        //struct for rendering buffer submission
-        static VkSubmitInfo submitInfo
-        {
-            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO
-        };
-
-        //command buffer(s) to submit
-        submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &cbMain[imageIndex];
-        //wait for image available semaphore
-        VkSemaphore waitSemaphores[]{imageAvailableSemaphores[currenImageAvailableSemaphore]};
-        //count of semaphores to wait
-        submitInfo.waitSemaphoreCount = sizeof(waitSemaphores) / sizeof(VkSemaphore);
-        //array of semaphores to wait
-        submitInfo.pWaitSemaphores = waitSemaphores;
-        //array of corresponding pipeline stages for each semaphore (where to wait)
-        //pointer to an array of pipeline stages at which each corresponding semaphore wait will occur
-        VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-        submitInfo.pWaitDstStageMask = waitStages;
-
-        //semaphores which will be signaled when the command buffers for this batch have completed execution
-        submitInfo.signalSemaphoreCount = 1;
-        submitInfo.pSignalSemaphores = &renderFinishedSemaphores[imageIndex];
 
 
         //wait for fence to be signaled (previous render finished for this frame) (make cpu wait and don't draw more frames than is in swap chain)
@@ -1191,8 +1254,52 @@ namespace vkbase
         onDeviceSyncEvent.call(imageIndex);
         rewriteMainBuffer(imageIndex);
 
+
+        //RENDERING
+        VkSemaphoreSubmitInfo waitSemaphoreInfo{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
+        waitSemaphoreInfo.semaphore=imageAvailableSemaphores[currenImageAvailableSemaphore];
+        waitSemaphoreInfo.stageMask=VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+        std::vector<VkSemaphoreSubmitInfo> waitSemaphoreInfos;
+        waitSemaphoreInfos.push_back(waitSemaphoreInfo);
+        for (auto wait_point:wait_points)
+        {
+            waitSemaphoreInfos.push_back(wait_point.submit_info());
+        }
+        wait_points.clear();
+
+        VkSemaphoreSubmitInfo signalSemaphoreInfos{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
+        signalSemaphoreInfos.semaphore=renderFinishedSemaphores[imageIndex];
+        signalSemaphoreInfos.stageMask=VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+        VkSemaphoreSubmitInfo signalTimelineSemaphoreInfos{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
+        signalTimelineSemaphoreInfos.semaphore=renderFinishedTimelineSemaphore;
+        signalTimelineSemaphoreInfos.value=frame_id;
+        signalTimelineSemaphoreInfos.stageMask=VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR;
+
+        VkSemaphoreSubmitInfo signalSemaphoresInfo[]={signalSemaphoreInfos,signalTimelineSemaphoreInfos};
+
+        VkCommandBufferSubmitInfo commandBufferSubmitInfo{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
+        commandBufferSubmitInfo.commandBuffer=cbMain[imageIndex];
+
+
+        //struct for rendering buffer submission
+        VkSubmitInfo2 submitInfo
+        {
+            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+            .waitSemaphoreInfoCount = static_cast<uint32_t>(waitSemaphoreInfos.size()),
+            .pWaitSemaphoreInfos=waitSemaphoreInfos.data(),
+            .commandBufferInfoCount = 1,
+            .pCommandBufferInfos = &commandBufferSubmitInfo,
+            .signalSemaphoreInfoCount = std::size(signalSemaphoresInfo),
+            .pSignalSemaphoreInfos = signalSemaphoresInfo,
+        };
+
+
+
+
         //submit command buffer to graphics queue
-        if (vkQueueSubmit(graphicsQueue, 1, &submitInfo/*ptr on array of struct*/, fenceRenderFinished[imageIndex]) != VK_SUCCESS)
+        if (vkQueueSubmit2(graphicsQueue, 1, &submitInfo, fenceRenderFinished[imageIndex]) != VK_SUCCESS)
         {
             throw std::runtime_error("failed to submit draw command buffer!");
         }
@@ -1201,7 +1308,7 @@ namespace vkbase
         VkPresentInfoKHR presentInfo{};
         presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
         //wait for render finished semaphore
-        presentInfo.waitSemaphoreCount = 1;
+            presentInfo.waitSemaphoreCount = 1;
         presentInfo.pWaitSemaphores = &renderFinishedSemaphores[imageIndex];
         //swap chain to present image to
         VkSwapchainKHR swapChains[] = {swapChain};
@@ -1225,9 +1332,10 @@ namespace vkbase
             throw std::runtime_error("failed to present swap chain image!");
         }
 
-        //go to the next semaphore for image available
-        currentFrame = (currentFrame + 1) % imageCount;
+
         currenImageAvailableSemaphore=(currenImageAvailableSemaphore+1)%static_cast<int>(imageAvailableSemaphores.size());
+
+        return WaitToken{renderFinishedTimelineSemaphore,frame_id};
     }
 
 
@@ -1466,6 +1574,29 @@ namespace vkbase
         return std::format("{} ({}) ({})", p.deviceName, p.deviceID, p.vendorID);
     }
 
+    uint64_t getCurrentFrame_host()
+    {
+        return frame_id;
+    }
+
+    uint64_t getLastRenderedFrame_device()
+    {
+        uint64_t currentValue = 0;
+        VkResult result = vkGetSemaphoreCounterValue(device, renderFinishedTimelineSemaphore, &currentValue);
+        return currentValue;
+    }
+
+    WaitToken getPreviousFrameWaitToken()
+    {
+        return WaitToken{renderFinishedTimelineSemaphore,(frame_id==0)? 0 : (frame_id-1)};
+    }
+
+    WaitToken getThisFrameWaitToken()
+    {
+        return WaitToken{renderFinishedTimelineSemaphore,frame_id};
+    }
+
+
 
     int destroy()
     {
@@ -1487,6 +1618,8 @@ namespace vkbase
         {
             vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
         }
+
+        vkDestroySemaphore(device, renderFinishedTimelineSemaphore, nullptr);
 
         for (int i = 0; i < imageCount; ++i)
         {
@@ -1531,6 +1664,12 @@ namespace vkbase
         return inheritanceInfo;
     }
 
+
+    int addBeforeInitCallback(const std::function<void()>& callback, int priority)
+    {
+        return beforeInitEvent.addCallback(callback, priority);
+    }
+
     int addInitCallback(const std::function<void()> &callback, int priority)
     {
         return onInitEvent.addCallback(callback, priority);
@@ -1546,7 +1685,7 @@ namespace vkbase
         return onDrawPrepareEvent.addCallback(callback, priority);
     }
 
-    int addRewriteBuffersCallback(const std::function<void(uint32_t)> &callback, int priority)
+    int addBeforeSubmitCallback(const std::function<void(uint32_t)> &callback, int priority)
     {
         return onDeviceSyncEvent.addCallback(callback, priority);
     }
@@ -1569,6 +1708,11 @@ namespace vkbase
     int addWriteBeforeRenderBufferCallback(const std::function<void(VkCommandBuffer, uint32_t)> &callback, int priority)
     {
         return onWriteBeforeRenderBufferEvent.addCallback(callback, priority);
+    }
+
+    void removeBeforeInitCallback(int id)
+    {
+        beforeInitEvent.removeCallback(id);
     }
 
     void removeInitCallback(int id)
@@ -1624,7 +1768,7 @@ namespace vkbase
         return physicalDeviceProperties;
     }
 
-    OneTimeCommandBuffer::OneTimeCommandBuffer(VkQueue queue, VkCommandPool commandPool):queue(queue),commandPool(commandPool)
+    OneTimeCommandBuffer::OneTimeCommandBuffer(VkQueue& queue, VkCommandPool& commandPool):queue(queue),commandPool(commandPool)
     {
         assert(commandPool!=VK_NULL_HANDLE && "Command pool is not created!");
         VkCommandBufferAllocateInfo allocInfo{};
@@ -1666,6 +1810,9 @@ namespace vkbase
     }
 
 
+
+
+
     void createTimestampsQueryPool()
     {
         VkQueryPoolCreateInfo createInfo{};
@@ -1699,6 +1846,8 @@ namespace vkbase
     OnSurfaceChangedReceiver::OnSurfaceChangedReceiver() : AbstractEventReceiver<>{onSurfaceChangedEvent, WRAP_MEMBER_FUNC(onSurfaceChanged)}{}
 
     OnCleanupReceiver::OnCleanupReceiver(): AbstractEventReceiver<>{onDestroyEvent, WRAP_MEMBER_FUNC(onCleanup)}{}
+
+    OnBeforeInitReceiver::OnBeforeInitReceiver(): AbstractEventReceiver<>{beforeInitEvent, WRAP_MEMBER_FUNC(onBeforeInit)}{}
 
     OnInitReceiver::OnInitReceiver(): AbstractEventReceiver<>{onInitEvent, WRAP_MEMBER_FUNC(onInit)}{}
 

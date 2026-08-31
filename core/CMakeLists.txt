@@ -75,3 +75,7 @@ target_link_libraries(
 		PUBLIC	glm::glm
 		PUBLIC VulkanMemoryAllocator
 )
+
+
+
+add_library(vkbase::core ALIAS vkbase_e)

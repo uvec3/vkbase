@@ -264,16 +264,16 @@ if(
     OR (SLANG_ENABLE_SLANG_RHI AND (SLANG_ENABLE_TESTS OR SLANG_ENABLE_EXAMPLES))
 )
     # imgui
-    add_library(imgui INTERFACE)
+    add_library(vkbase_imgui INTERFACE)
     if(NOT SLANG_OVERRIDE_IMGUI_PATH)
         target_include_directories(
-            imgui
+                vkbase_imgui
             ${system}
             INTERFACE "${CMAKE_CURRENT_LIST_DIR}/imgui"
         )
     else()
         target_include_directories(
-            imgui
+                vkbase_imgui
             ${system}
             INTERFACE "${SLANG_OVERRIDE_IMGUI_PATH}/imgui"
         )

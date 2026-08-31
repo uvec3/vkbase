@@ -151,6 +151,14 @@ namespace vkbase
         virtual void onCleanup()=0;
     };
 
+    class OnBeforeInitReceiver: public AbstractEventReceiver<>
+    {
+    public:
+        OnBeforeInitReceiver();
+    protected:
+        virtual void onBeforeInit()=0;
+    };
+
     class OnInitReceiver: public AbstractEventReceiver<>
     {
     public:

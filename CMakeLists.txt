@@ -13,7 +13,9 @@ add_subdirectory(extensions/Assets)
 add_subdirectory(backends/SDL_backend)
 add_subdirectory(extensions/imgui)
 add_subdirectory(extensions/Buffer)
+add_subdirectory(extensions/Image)
 add_subdirectory(extensions/ShadersRC)
+add_subdirectory(extensions/cuda)
 
 
 

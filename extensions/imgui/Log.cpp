@@ -134,6 +134,7 @@ namespace vkbase::imgui
     void unregisterEngineMessagesLog()
     {
         removeMessagesListener(messageEventId);
+        exit(4);
     }
 
     void drawEngineMessagesLog(bool* show)

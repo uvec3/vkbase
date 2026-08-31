@@ -2204,14 +2204,9 @@ namespace vkbase::imgui
 
 
         ////////////////////////////////////////////
-
-        addDrawPrepareCallback([](uint32_t imageIndex)
+        addBeforeSubmitCallback([](uint32_t bufferIndex)
         {
             renderIMGUI();
-        });
-
-        addRewriteBuffersCallback([](uint32_t bufferIndex)
-        {
             rewriteIMGUICommandBuffer(bufferIndex);
         });
 
@@ -2420,8 +2415,6 @@ namespace vkbase::imgui
     {
         onUiEvent.removeCallback(id);
     }
-
-
 
     float getDefaultFontSize()
     {

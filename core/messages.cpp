@@ -12,7 +12,12 @@ namespace vkbase
     void info_internal(const char* str, int len)
     {
         sys::info(str,len);
-        onMessageEvent.call(std::string_view(str,len),MessageType::Info);
+
+        vkbase::scheduleOnMainThread([str=std::string(str)]()
+        {
+            onMessageEvent.call(std::string_view(str),MessageType::Info);
+        });
+
     }
 
     void error_internal(const char* str, int len)

@@ -118,7 +118,7 @@ namespace vkbase
             vmaDestroyBuffer(vkbase::vma, buffer, allocation);
     }
 
-    Buffer& Buffer::operator=(Buffer&& other)
+    Buffer& Buffer::operator=(Buffer&& other) noexcept
     {
         if (buffer!=VK_NULL_HANDLE)
             vmaDestroyBuffer(vkbase::vma, buffer, allocation);

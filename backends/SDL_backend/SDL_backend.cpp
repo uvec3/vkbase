@@ -59,7 +59,20 @@ namespace vkbase::sys
         if(window)
         {
             if (enable)
+            {
+                int displayIndex = SDL_GetWindowDisplayIndex(window);
+                if (displayIndex >= 0) {
+                    SDL_DisplayMode mode;
+                    if (SDL_GetCurrentDisplayMode(displayIndex, &mode) == 0) {
+                        m_width = mode.w;
+                        m_height = mode.h;
+                    }
+                }
+                setWindowSize(m_width,m_height);
+
                 SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN   );
+
+            }
             else
             {
                 SDL_SetWindowFullscreen(window, 0);
@@ -80,15 +93,20 @@ namespace vkbase::sys
             throw std::runtime_error("SDL init error: " + std::string(SDL_GetError()));
         }
 
-        // get monitors count
-        int monitorsCount = SDL_GetNumVideoDisplays();
-        int display=0;
-
 
         int window_flags = SDL_WINDOW_VULKAN| SDL_WINDOW_RESIZABLE;
 
         if(fullscreenMode)
+        {
+            SDL_DisplayMode mode;
+            if (SDL_GetCurrentDisplayMode(0, &mode) == 0) {
+                m_width = mode.w;
+                m_height = mode.h;
+            }
+
             window_flags |= SDL_WINDOW_FULLSCREEN;
+        }
+
 
         SDL_Window* w = SDL_CreateWindow(m_appName.c_str(), SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,m_width, m_height, window_flags);
 
