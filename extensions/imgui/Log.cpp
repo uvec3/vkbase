@@ -137,8 +137,10 @@ namespace vkbase::imgui
         exit(4);
     }
 
-    void drawEngineMessagesLog(bool* show)
+    bool drawEngineMessagesLog()
     {
-        uiLog.draw(show);
+        bool open=true;
+        uiLog.draw(&open);
+        return open;
     }
 }

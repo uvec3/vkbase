@@ -76,10 +76,23 @@ namespace vkbase::sys
             else
             {
                 SDL_SetWindowFullscreen(window, 0);
-                SDL_SetWindowSize(window, m_width-1, m_height-1);
+                maximize();
             }
         }
         fullscreenMode=enable;
+    }
+
+    void maximize()
+    {
+        if (window)
+        {
+            SDL_MaximizeWindow(window);
+        }
+    }
+
+    bool isFullscreen()
+    {
+        return fullscreenMode;
     }
 
 

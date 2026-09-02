@@ -46,6 +46,7 @@ namespace vkbase::imgui
     //push default font of a specified size
     bool pushFont(int size);
 
+    void scaleDefaultFontUI();
 
 
     extern VkDescriptorPool imguiDescriptorPool;

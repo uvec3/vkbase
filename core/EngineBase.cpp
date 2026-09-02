@@ -1620,6 +1620,10 @@ namespace vkbase
         }
 
         vkDestroySemaphore(device, renderFinishedTimelineSemaphore, nullptr);
+        vkDestroySemaphore(device, graphicsTimelineSemaphore, nullptr);
+        vkDestroySemaphore(device, computeTimelineSemaphore, nullptr);
+        vkDestroySemaphore(device, transferTimelineSemaphore, nullptr);
+        vkDestroySemaphore(device, presentTimelineSemaphore, nullptr);
 
         for (int i = 0; i < imageCount; ++i)
         {

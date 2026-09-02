@@ -2283,7 +2283,6 @@ namespace vkbase::imgui
 
     struct FontRequest { std::string name; int size; };
     static std::vector<FontRequest> pending_font_requests;
-    uint8_t font_size;
     std::string font;
     Event<> onUiEvent;
     static float defaultFontSize = 16.0f;
@@ -2378,6 +2377,8 @@ namespace vkbase::imgui
             ImGui::Text("GPU: %s", gpuName.c_str());
             ImGui::Text("Resolution: %dx%d", extent.width, extent.height);
             ImGui::Text("Images count in swap chain: %d", imageCount);
+            ImGui::Text("Default font name: %s", defaultFontName.c_str());
+            ImGui::Text("Default font size: %f", defaultFontSize);
         }
         ImGui::End();
         return showDebug;
@@ -2540,5 +2541,37 @@ namespace vkbase::imgui
     bool pushFont(int size)
     {
         return pushFont(getDefaultFontName(),size);
+    }
+
+    void scaleDefaultFontUI()
+    {
+        if (ImGui::IsKeyDown(ImGui::GetKeyIndex(ImGuiKey_LeftCtrl)))
+        {
+            auto size=getDefaultFontSize();
+            //font size
+            if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Equal)))
+            {
+                size+=1;
+            }
+            if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Minus)))
+            {
+                size-=1;
+            }
+            if(ImGui::GetIO().MouseWheel!=0)
+            {
+                size+=ImGui::GetIO().MouseWheel;
+            }
+
+            if (size>50)
+                size=50;
+            else if (size<7)
+                size=7;
+
+            vkbase::imgui::pushFont(getDefaultFontName(),static_cast<int>(std::round(size)));
+            ImGui::PopFont();
+
+            setDefaultFontSize(size);
+
+        }
     }
 }

@@ -42,5 +42,5 @@ namespace vkbase::imgui
 
     void registerEngineMessagesLog();
     void unregisterEngineMessagesLog();
-    void drawEngineMessagesLog(bool* show = nullptr);
+    bool drawEngineMessagesLog();
 }

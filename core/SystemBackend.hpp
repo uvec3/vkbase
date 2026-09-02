@@ -38,6 +38,10 @@ namespace vkbase::sys
 
     void fullscreen(bool enable);
 
+    void maximize();
+
+    bool isFullscreen();
+
     void captureKeyboard();
 
     double getMilliseconds();
