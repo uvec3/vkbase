@@ -27,20 +27,6 @@ add_library(vkbase_e  EngineBase.cpp ParallelTaskManager.cpp messages.cpp
 		${PLATFORM_DEPEND_SOURCES})
 
 
-###############
-### INCLUDE ###
-###############
-
-target_include_directories(
-		vkbase_e
-		PUBLIC ${Vulkan_INCLUDE_DIRS}
-		PUBLIC ${Vulkan_INCLUDE_DIRS}/../Third-Party/Include
-		PUBLIC ../include
-		PUBLIC ../external/imgui
-		PUBLIC ../external/imgui/backends
-)
-
-
 
 ###############
 ### FETCH #####
@@ -64,6 +50,8 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(vulkanmemoryallocator)
 
+
+
 ###############
 ### LINKING ###
 ###############
@@ -71,11 +59,28 @@ FetchContent_MakeAvailable(vulkanmemoryallocator)
 #libraries
 target_link_libraries(
 		vkbase_e
+#		PUBLIC	glm::glm
 		PUBLIC ${Vulkan_LIBRARIES}
-		PUBLIC	glm::glm
 		PUBLIC VulkanMemoryAllocator
+)
+
+
+###############
+### INCLUDE ###
+###############
+
+target_include_directories(
+		vkbase_e
+		BEFORE PUBLIC "${glm_SOURCE_DIR}"
+		PUBLIC ${Vulkan_INCLUDE_DIRS}
+		PUBLIC ../include
+		PUBLIC ../external/imgui
+		PUBLIC ../external/imgui/backends
 )
 
 
 
 add_library(vkbase::core ALIAS vkbase_e)
+
+message(STATUS "GLM source: ${glm_SOURCE_DIR}")
+message(STATUS "GLM header: ${glm_SOURCE_DIR}/glm/glm.hpp")

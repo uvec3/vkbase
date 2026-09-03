@@ -17,6 +17,12 @@ add_subdirectory(extensions/Image)
 add_subdirectory(extensions/ShadersRC)
 add_subdirectory(extensions/cuda)
 
+#override vulkan glm
+target_include_directories(
+        vkbase_e
+        BEFORE PUBLIC "${glm_SOURCE_DIR}"
+)
+
 
 
 ##System backend for GLFW desktop
