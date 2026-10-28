@@ -97,7 +97,7 @@ namespace vkbase
     std::thread::id main_thread_id;
 
     //the desired number of frames to be processed simultaneously (corrected when creating a swapchain with restrictions)
-    uint32_t imageCount = 1;//{dep swapchain}
+    uint32_t imageCount = 1;
     double lastFrameTime;
 
     glm::vec4 clearColor = {0.0f, 0.0f, 0.0f, 1.0f};//{dep render pass}
@@ -362,7 +362,7 @@ namespace vkbase
         vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
 
         for (VkPhysicalDevice &physDevice: devices) {
-            std::cout<< "device: " << getDeviceName(physDevice);
+            std::cout<< "device: " << getDeviceName(physDevice)<<"\n";
         }
 
         //find suitable discrete device
@@ -1187,7 +1187,6 @@ namespace vkbase
 
     WaitToken drawFrame()
     {
-
         //check extent
         auto newExtent=chooseSwapExtent(querySwapChainDetails(physicalDevice).capabilities);
         if(newExtent.width==0 || newExtent.height==0)//if minimized do nothing
@@ -1308,7 +1307,7 @@ namespace vkbase
         VkPresentInfoKHR presentInfo{};
         presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
         //wait for render finished semaphore
-            presentInfo.waitSemaphoreCount = 1;
+        presentInfo.waitSemaphoreCount = 1;
         presentInfo.pWaitSemaphores = &renderFinishedSemaphores[imageIndex];
         //swap chain to present image to
         VkSwapchainKHR swapChains[] = {swapChain};

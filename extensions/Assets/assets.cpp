@@ -9,10 +9,10 @@ CMRC_DECLARE(vkbase_assets);
 
 namespace vkbase::assets
 {
-    std::vector<std::pair<std::string_view, std::string_view>> assetsFrom(const std::string& path)
+    std::vector<std::pair<std::string, std::string_view>> assetsFrom(const std::string& path)
     {
         auto fs = cmrc::vkbase_assets::get_filesystem();
-        std::vector<std::pair<std::string_view, std::string_view>> results;
+        std::vector<std::pair<std::string, std::string_view>> results;
 
         std::function<void(const std::string&)> visit = [&](const std::string& dir)
         {
