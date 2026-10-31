@@ -554,8 +554,15 @@ namespace vkbase
     //SETUP SWAP CHAIN
     void recreateSwapChain()
     {
-        if(extent.width==0 || extent.height==0)
+        //check the CURRENT surface size
+        VkSurfaceCapabilitiesKHR capabilities{};
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &capabilities);
+        VkExtent2D surfaceExtent = chooseSwapExtent(capabilities);
+        if (surfaceExtent.width == 0 || surfaceExtent.height == 0)
+        {
+            extent = {0, 0};
             return;
+        }
 
         //wait present queue
         vkQueueWaitIdle(presentQueue);
@@ -1191,13 +1198,14 @@ namespace vkbase
     WaitToken drawFrame()
     {
         //check extent
-        auto newExtent=chooseSwapExtent(querySwapChainDetails(physicalDevice).capabilities);
-        if(newExtent.width==0 || newExtent.height==0)//if minimized do nothing
-            return WaitToken{renderFinishedTimelineSemaphore,0};
-        else if(newExtent.width!=extent.width || newExtent.height!=extent.height)//if extent changed
+        if (extent.width == 0 || extent.height == 0)
         {
+            VkSurfaceCapabilitiesKHR capabilities{};
+            vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &capabilities);
+            auto newExtent = chooseSwapExtent(capabilities);
+            if (newExtent.width == 0 || newExtent.height == 0)
+                return WaitToken{renderFinishedTimelineSemaphore, 0};
             recreateSwapChain();
-            //return;
         }
 
         VkResult result;
@@ -1296,8 +1304,6 @@ namespace vkbase
             .signalSemaphoreInfoCount = std::size(signalSemaphoresInfo),
             .pSignalSemaphoreInfos = signalSemaphoresInfo,
         };
-
-
 
 
         //submit command buffer to graphics queue

@@ -107,6 +107,11 @@ namespace vkbase
 
             return vkWaitSemaphores(device, &wait_info,timeout)==VK_SUCCESS;
         }
+
+        void reset()
+        {
+            semaphore=VK_NULL_HANDLE;
+        }
     };
 
     struct WaitPoint
