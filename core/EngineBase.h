@@ -16,6 +16,13 @@
 
 namespace vkbase
 {
+    struct Config
+    {
+        uint32_t min_img_in_swapchain=2;
+        VkPresentModeKHR preferred_present_mode=VK_PRESENT_MODE_FIFO_KHR;
+    };
+
+
     enum class MessageType
     {
         Error,
@@ -43,9 +50,8 @@ namespace vkbase
     }
 
 
-
     extern VkInstance instance;
-
+    extern Config config;
     extern vk::Device device;
     extern VkPhysicalDevice physicalDevice;
 
@@ -86,12 +92,14 @@ namespace vkbase
 
     struct WaitToken
     {
-        VkSemaphore semaphore;
-        uint64_t value;
+        VkSemaphore semaphore=VK_NULL_HANDLE;
+        uint64_t value=0;
 
 
         bool wait(uint64_t timeout=UINT64_MAX) const
         {
+            if (semaphore == VK_NULL_HANDLE)
+                return true;
             VkSemaphoreWaitInfo wait_info{.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO};
             wait_info.semaphoreCount=1;
             wait_info.pSemaphores=&semaphore;

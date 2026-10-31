@@ -123,6 +123,7 @@ namespace vkbase::imgui
             if (sampler)
             {
                 vkDestroySampler(device,sampler,nullptr);
+                vkFreeDescriptorSets(device, imguiDescriptorPool, 1, &descriptor_set);
             }
         }
 

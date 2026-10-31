@@ -1,0 +1,19 @@
+#pragma once
+
+#ifndef VKBASE_EMBED_ASSETS
+#define VKBASE_EMBED_ASSETS @VKBASE_EMBED_ASSETS_INT@
+#endif
+
+#ifndef VKBASE_ASSETS_COPY
+#define VKBASE_ASSETS_COPY @VKBASE_ASSETS_COPY_INT@
+#endif
+
+#if !VKBASE_EMBED_ASSETS && !VKBASE_ASSETS_COPY
+namespace vkbase::assets::internal
+{
+    inline constexpr const char* SEARCH_PATHS[] = {
+@VKBASE_CONFIG_SEARCH_PATHS@
+        nullptr
+    };
+}
+#endif

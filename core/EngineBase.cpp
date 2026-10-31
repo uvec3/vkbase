@@ -131,6 +131,8 @@ namespace vkbase
     std::string m_appName{"VulkanApp"};
     //VK instance
     VkInstance instance{VK_NULL_HANDLE};
+    //config
+    Config config;
     //debug messenger(response for debug messages callback)
     VkDebugUtilsMessengerEXT debugMessenger{VK_NULL_HANDLE};
     // Physical device handle
@@ -609,6 +611,7 @@ namespace vkbase
 
         //select frames in flight count
         //correct imageCount in respect to min and max available values
+        imageCount=config.min_img_in_swapchain;
         if (imageCount <= swapChainDetails.capabilities.minImageCount)
             imageCount = swapChainDetails.capabilities.minImageCount ;
         // (0 - means no limitation)
@@ -725,7 +728,7 @@ namespace vkbase
     chooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes)
     {
         for (const auto& availablePresentMode : availablePresentModes) {
-            if (availablePresentMode == VK_PRESENT_MODE_FIFO_KHR) {
+            if (availablePresentMode == config.preferred_present_mode) {
                 return availablePresentMode;
             }
         }
